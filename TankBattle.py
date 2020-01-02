@@ -1,3 +1,4 @@
+import os
 import random
 import sys
 import pygame
@@ -11,51 +12,56 @@ if len(sys.argv) > 1:
     # sys.argv[1]...
     pass
 
-# GLOBAL CONSTANTS #
+# FILE SETTINGS #
+if getattr(sys, 'frozen', False):
+    os.chdir(sys._MEIPASS)
+if getattr(sys, 'frozen', False):
+    os.chdir(os.path.dirname(sys.executable))
+main_dir = os.path.split(os.path.abspath(__file__))[0]
+data_dir = os.path.join(main_dir, "data")
+
+# DISPLAY SETTINGS #
 SCREEN_WIDTH = 1080
 SCREEN_HEIGHT = 760
 FRAME_RATE = 60
 
+# GAME ELEMENT SETTINGS #
 TANK_WIDTH = 40
-SHOT_SPEED = 10
 TANK_LENGTH = 60
 TURN_SPEED = 4
+MAX_HEALTH = 1000
 ACCELERATION = .005
 MAX_SPEED = 0.3
 FRICTION = 0.002
+BIG_SHOT_SIZE = 10
+BIG_SHOT_MAX = 5
+BIG_SHOT_SPEED = 10
+SMALL_SHOT_SIZE = 4
+SMALL_SHOT_MAX = 100
+SMALL_SHOT_SPEED = 15
 
+# COLOR SETTINGS #
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
 COLOR_RED = (255, 0, 0)
-COLOR_RED_DARK = (100, 0, 0)
-COLOR_RED_MEDIUM = (200, 70, 70)
-COLOR_RED_LIGHT = (220, 100, 100)
-COLOR_RED_ULTRALIGHT = (255, 180, 180)
 COLOR_BLUE = (0, 0, 255)
-COLOR_BLUE_DARK = (0, 0, 100)
-COLOR_BLUE_MEDIUM = (70, 70, 200)
-COLOR_BLUE_LIGHT = (100, 100, 220)
-COLOR_BLUE_ULTRALIGHT = (180, 180, 255)
-COLORS_DIRT = [(77, 48, 25), (58, 36, 19), (19, 12, 6)]
-RED_PROFILE = {"light": COLOR_RED_LIGHT,
-               "ultralight": COLOR_RED_ULTRALIGHT,
-               "medium": COLOR_RED_MEDIUM,
-               "dark": COLOR_RED_DARK,
+COLOR_GREEN = (255, 0, 0)
+PIXEL_COLORS = [(255, 0, 0), (255, 255, 0), (255, 153, 51)]
+DIRT_COLORS = [(77, 48, 25), (58, 36, 19), (19, 12, 6)]
+ROCK_COLORS = [(128, 128, 128), (77, 77, 77), (51, 51, 51)]
+RED_PROFILE = {"light": (220, 100, 100),
+               "ultralight": (255, 180, 180),
+               "medium": (200, 70, 70),
+               "dark": (100, 0, 0),
                "full": COLOR_RED}
-BLUE_PROFILE = {"light": COLOR_BLUE_LIGHT,
-                "ultralight": COLOR_BLUE_ULTRALIGHT,
-                "medium": COLOR_BLUE_MEDIUM,
-                "dark": COLOR_BLUE_DARK,
+BLUE_PROFILE = {"light": (100, 100, 220),
+                "ultralight": (180, 180, 255),
+                "medium": (70, 70, 200),
+                "dark": (0, 0, 100),
                 "full": COLOR_BLUE}
 
 # CUSTOM EVENTS #
 MY_EVENT = pygame.USEREVENT + 0
-
-# PYGAME INIT #
-pygame.init()
-clock = pygame.time.Clock()
-main_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-TIME_START = pygame.time.get_ticks()
 
 """ SPRITE TEMPLATE
 class MySprite(pygame.sprite.Sprite):
@@ -66,6 +72,20 @@ class MySprite(pygame.sprite.Sprite):
     def update(self, *args):
         pass
 """
+
+
+def make_background_tile(colors, width=10, height=10):
+    width = width
+    height = height
+    surf = pygame.Surface((width, height))
+    surf.fill(COLOR_BLACK)
+    pArr = pygame.PixelArray(surf)
+    for i in range(width):
+        for j in range(height):
+            pArr[i][j] = random.choice(colors)
+
+    surf.set_colorkey(COLOR_BLACK)
+    return surf
 
 
 class Tank(pygame.sprite.Sprite):
@@ -88,37 +108,44 @@ class Tank(pygame.sprite.Sprite):
             pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
         self.orig_image = self.image
         self.pos = Vector2((xpos, ypos))
+        self.last_pos = list()
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
         self.direction = 0
         self.speed = 0
         self.track = 0
+        self.collision = False
 
     def update(self, *args):
         if self.speed != 0:
-            self.move_tracks()
-        self.rotate()
-        self.move()
-        # Slow down tank if not accelerating
+            self._move_tracks()
+        self._rotate()
+        self._move()
+        # Slow down p if not accelerating
         if self.speed > 0:
             self.speed = max(0, self.speed - FRICTION)
 
-    def rotate(self):
+    def _rotate(self):
         self.image = pygame.transform.rotozoom(self.orig_image, -self.direction, 1)
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
 
-    def move(self):
-        self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))
-        self.pos.x = min(self.pos.x, SCREEN_WIDTH - TANK_WIDTH // 2)
-        self.pos.x = max(TANK_WIDTH // 2, self.pos.x)
-        self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction))
-        self.pos.y = min(self.pos.y, SCREEN_HEIGHT - TANK_WIDTH // 2)
-        self.pos.y = max(TANK_WIDTH // 2, self.pos.y)
-        if (self.pos.x == 0 + TANK_WIDTH // 2 or self.pos.x == SCREEN_WIDTH - TANK_WIDTH // 2) \
-                or (self.pos.y == 0 + TANK_WIDTH // 2 or self.pos.y == SCREEN_HEIGHT - TANK_WIDTH // 2):
+    def _move(self):
+        if not self.collision:
+            self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))
+            self.pos.x = min(self.pos.x, SCREEN_WIDTH - TANK_LENGTH // 2)
+            self.pos.x = max(TANK_LENGTH // 2, self.pos.x)
+            self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction))
+            self.pos.y = min(self.pos.y, SCREEN_HEIGHT - TANK_LENGTH // 2)
+            self.pos.y = max(TANK_LENGTH // 2, self.pos.y)
+        else:
+            self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction + 180))
+            self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction + 180))
+            self.speed += FRICTION
+        if (self.pos.x == 0 + TANK_LENGTH // 2 or self.pos.x == SCREEN_WIDTH - TANK_LENGTH // 2) \
+                or (self.pos.y == 0 + TANK_LENGTH // 2 or self.pos.y == SCREEN_HEIGHT - TANK_LENGTH // 2):
             self.speed = max(0, self.speed - ACCELERATION)
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
 
-    def move_tracks(self):
+    def _move_tracks(self):
         self.track = (self.track + self.speed * 10) % 5
         pygame.draw.rect(self.orig_image, self.color_light, (0, 0, TANK_LENGTH, 8))
         pygame.draw.rect(self.orig_image, self.color_light, (0, TANK_WIDTH - 8, TANK_LENGTH, 8))
@@ -160,9 +187,9 @@ class Cannon(pygame.sprite.Sprite):
     def update(self, *args):
         if len(args) != 0:
             self.pos = args[0]
-        self.rotate()
+        self._rotate()
 
-    def rotate(self):
+    def _rotate(self):
         self.image = pygame.transform.rotozoom(self.orig_image, self.angle, 1)
         offset_rotated = self.offset.rotate(math.radians(self.angle)) + self.pos
         self.rect = self.image.get_rect(center=(int(offset_rotated.x), int(offset_rotated.y)))
@@ -183,28 +210,28 @@ class Cannon(pygame.sprite.Sprite):
 
 class Shot(pygame.sprite.Sprite):
 
-    def __init__(self, size, start_pos, aim, tank_aim, tank_speed, color):
-        self.color_ultralight = color["ultralight"]
+    def __init__(self, size, p):
+        self.color_ultralight = p.color["ultralight"]
         pygame.sprite.Sprite.__init__(self)
         self.image = pygame.Surface((size, size))
         self.image.fill(COLOR_WHITE)
         self.image.set_colorkey(COLOR_WHITE)
         pygame.draw.circle(self.image, self.color_ultralight, (size // 2, size // 2), size // 2)
         self.rect = self.image.get_rect()
-        self.rect.centerx = int(start_pos.x + math.cos(-math.radians(aim)) * 30)
-        self.rect.centery = int(start_pos.y + math.sin(-math.radians(aim)) * 30)
-        self.aim = -math.radians(aim)
+        self.aim = -math.radians(p.cannon.angle)
+        self.rect.centerx = int(p.cannon.pos.x + math.cos(self.aim) * 30)
+        self.rect.centery = int(p.cannon.pos.y + math.sin(self.aim) * 30)
         self.size = size
-        if self.size > 4:
-            self.speed = SHOT_SPEED
-        else:
-            self.speed = SHOT_SPEED * 1.5
-        self.tank_aim = tank_aim
-        self.tank_speed = tank_speed
-        self.pos = Vector2(start_pos)
+        if self.size == BIG_SHOT_SIZE:
+            self.speed = BIG_SHOT_SPEED
+        elif self.size == SMALL_SHOT_SIZE:
+            self.speed = SMALL_SHOT_SPEED
+        self.tank_aim = p.tank.direction
+        self.tank_speed = p.tank.speed
+        self.pos = Vector2(p.cannon.pos)
 
     def update(self, *args):
-        if -100 < self.rect.centerx < SCREEN_WIDTH + 100 and -100 < self.rect.centery < SCREEN_HEIGHT + 100:
+        if 0 < self.rect.centerx < SCREEN_WIDTH and 0 < self.rect.centery < SCREEN_HEIGHT:
             self.rect.centerx += int(self.speed * math.cos(self.aim))
             self.rect.centery += int(self.speed * math.sin(self.aim))
             self.rect.centerx += int(self.tank_speed * math.cos(self.tank_aim))
@@ -222,11 +249,18 @@ class Player:
         self.tank = Tank(xpos, ypos, self.color)
         self.cannon = Cannon(self.tank.pos, self.color)
         self.shots = pygame.sprite.RenderPlain(())
-        self.parts = pygame.sprite.RenderPlain(())
-        self.parts.add(self.tank, self.cannon)
+        self.parts = pygame.sprite.RenderPlain((self.tank, self.cannon))
+        self.body = pygame.sprite.GroupSingle(self.tank)
         self.last_shot = 0
+        self.health = 1000
+        self.big_shots = BIG_SHOT_MAX
+        self.small_shots = SMALL_SHOT_MAX
 
     def update(self):
+        if game_timer % 60 == 0:
+            self.big_shots = min(self.big_shots + 1, BIG_SHOT_MAX)
+        if game_timer % 20 == 0:
+            self.small_shots = min(self.small_shots + 1, SMALL_SHOT_MAX)
         self.parts.update(self.tank.pos)
         self.shots.update()
 
@@ -243,15 +277,28 @@ class Player:
         self.tank.accelerate(-ACCELERATION)
 
     def shoot(self, size):
-        if size > 0:
-            shot = Shot(size, self.cannon.pos, self.cannon.angle, self.tank.direction,
-                        self.tank.speed, self.color)
+        log_shot = False
+        if size == BIG_SHOT_SIZE:
+            if self.big_shots > 0:
+                self.big_shots -= 1
+                log_shot = True
+        elif size == SMALL_SHOT_SIZE:
+            if self.small_shots > 0:
+                self.small_shots -= 1
+                log_shot = True
+        if log_shot:
+            shot = Shot(size, self)
             self.shots.add(shot)
             self.last_shot = shot.size
-            return shot
 
     def aim(self, target):
         self.cannon.aim(target)
+
+    def take_damage(self, size):
+        if size == BIG_SHOT_SIZE:
+            self.health = max(0, self.health - 10)
+        if size == SMALL_SHOT_SIZE:
+            self.health = max(0, self.health - 1)
 
     def get_pos(self):
         return self.tank.pos
@@ -264,28 +311,31 @@ class Player:
                 "direction": self.tank.direction,
                 "speed": self.tank.speed,
                 "angle": self.cannon.angle,
-                "last_shot": self.last_shot}
+                "last_shot": self.last_shot,
+                "health": self.health,
+                "big_shots": self.big_shots,
+                "small_shots": self.small_shots}
         self.last_shot = 0
         return pickle.dumps(data, -1)
 
     def set_data(self, data):
         data = pickle.loads(data)
         self.tank.pos = data["pos"]
-        self.tank.pos.x += 500 ########################################
+        self.tank.pos.x += 500  ########################################
         self.tank.direction = data["direction"]
         self.tank.speed = data["speed"]
         self.cannon.angle = data["angle"]
-        if data["last_shot"] != 0:
-            shot = Shot(data["last_shot"], self.cannon.pos, self.cannon.angle, self.tank.direction,
-                        self.tank.speed, self.color)
+        if data["last_shot"]:
+            shot = Shot(data["last_shot"], self)
             self.shots.add(shot)
+        self.health = data["health"]
+        self.big_shots = data["big_shots"]
+        self.small_shots = data["small_shots"]
 
 
 class HitPixel(pygame.sprite.Sprite):
 
     def __init__(self, xy=(0, 0), size=5):
-        PIXEL_COLORS = [(255, 0, 0), (255, 255, 0), (255, 153, 51)]
-
         pygame.sprite.Sprite.__init__(self)
         self.image = pygame.Surface((random.randrange(2, size), random.randrange(2, size)))
         self.image.fill(random.choice(PIXEL_COLORS))
@@ -304,42 +354,104 @@ class HitPixel(pygame.sprite.Sprite):
             del self
 
 
-def make_background_tile(colors):
-    width = 100
-    height = 100
-    surf = pygame.Surface((width, height))
-    surf.fill(COLOR_BLACK)
-    pArr = pygame.PixelArray(surf)
-    for i in range(height):
-        for j in range(width):
-            pArr[i][j] = random.choice(colors)
+def draw_text(text, surface, font, x, y, color, bg, pos='left'):
+    text_image = font.render(text, 1, color, bg)
+    text_image.set_colorkey(bg)
+    text_rect = text_image.get_rect()
 
-    surf.set_colorkey(COLOR_BLACK)
-    return surf
+    if pos == 'left':
+        text_rect.topleft = (int(x), int(y))
+    elif pos == 'center':
+        text_rect.midtop = (int(x), int(y))
+    elif pos == 'right':
+        text_rect.topright = (int(x), int(y))
+
+    surface.blit(text_image, text_rect)
+    return text_rect
 
 
-DIRT_BG = make_background_tile(COLORS_DIRT)
+def draw_info_banner():
+    global player, enemy
+    h = MAX_HEALTH // 200
+
+    # PLAYER INFO
+    temp = draw_text("PLAYER", main_screen, TEXT_FONT_SMALL, 20, 20, COLOR_WHITE, COLOR_BLACK)
+    pygame.draw.rect(main_screen, player.color["dark"], (20, temp.bottom + 10, MAX_HEALTH // h, 20))
+    pygame.draw.rect(main_screen, player.color["medium"], (20, temp.bottom + 10, player.health // h, 20))
+    bar = pygame.draw.rect(main_screen, player.color["light"], (20, temp.bottom + 10, MAX_HEALTH // h, 20), 1)
+    for i in range(BIG_SHOT_MAX):
+        shots = pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 10, bar.bottom + 10, 5, 10))
+        if i <= player.big_shots:
+            pygame.draw.rect(main_screen, player.color["light"], (20 + i * 10, bar.bottom + 10, 5, 10))
+    for i in range(SMALL_SHOT_MAX):
+        pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 2, shots.bottom + 10, 1, 10), 1)
+        if i <= player.small_shots:
+            pygame.draw.rect(main_screen, player.color["light"], (20 + i * 2, shots.bottom + 10, 1, 10))
+    # ENEMY INFO #
+    temp = draw_text("ENEMY", main_screen, TEXT_FONT_SMALL, SCREEN_WIDTH - 20, 20, COLOR_WHITE, COLOR_BLACK, "right")
+    pygame.draw.rect(main_screen, enemy.color["dark"],
+                     (SCREEN_WIDTH - 20 - MAX_HEALTH // h, temp.bottom + 10, MAX_HEALTH // h, 20))
+    pygame.draw.rect(main_screen, enemy.color["medium"],
+                     (SCREEN_WIDTH - 20 - enemy.health // h, temp.bottom + 10, enemy.health // h, 20))
+    bar = pygame.draw.rect(main_screen, enemy.color["light"],
+                           (SCREEN_WIDTH - 20 - MAX_HEALTH // h, temp.bottom + 10, MAX_HEALTH // h, 20), 1)
+    for i in range(BIG_SHOT_MAX):
+        shots = pygame.draw.rect(main_screen, enemy.color["dark"],
+                                 (SCREEN_WIDTH - 20 + i * 10 - BIG_SHOT_MAX * 10 + 5, bar.bottom + 10, 5, 10))
+        if BIG_SHOT_MAX - i <= enemy.big_shots:
+            pygame.draw.rect(main_screen, enemy.color["light"],
+                             (SCREEN_WIDTH - 20 + i * 10 - BIG_SHOT_MAX * 10 + 5, bar.bottom + 10, 5, 10))
+    for i in range(SMALL_SHOT_MAX):
+        pygame.draw.rect(main_screen, enemy.color["dark"],
+                         (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10), 1)
+        if SMALL_SHOT_MAX - i <= enemy.small_shots:
+            pygame.draw.rect(main_screen, enemy.color["light"],
+                             (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10))
+
+
+# GAME INITIALIZATION #
+pygame.init()
+clock = pygame.time.Clock()
+TIME_START = pygame.time.get_ticks()
+game_timer = 0
+
+# FONT SETTINGS #
+TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
+BANNER_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 52)
+TEXT_FONT_BIG = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 30)
+TEXT_FONT_MED = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 20)
+TEXT_FONT_SMALL = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 16)
+TEXT_FONT_TINY = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 12)
+
+# AREA ELEMENTS #
+main_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+DIRT_BG = make_background_tile(DIRT_COLORS, 200, 200)
+ROCK_BG = make_background_tile(ROCK_COLORS, 50, 50)
+# GRASS_BG
+# WATER_BG
+
+# PLAYER ELEMENTS #
+player = Player(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, RED_PROFILE)
+enemy = Player(SCREEN_WIDTH // 4 * 3, SCREEN_HEIGHT // 2, BLUE_PROFILE)
+
+# SPRITE CONTAINER INITIALIZATION #
+tanks = pygame.sprite.RenderPlain((player.get_sprites(), enemy.get_sprites()))
+pixels = pygame.sprite.RenderPlain(())
 
 
 def main():
-    background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+    global main_screen, player, enemy, game_timer
 
-    for i in range(SCREEN_WIDTH // DIRT_BG.get_width() + 1):
-        for j in range(SCREEN_HEIGHT // DIRT_BG.get_width() + 1):
+    for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
+        for j in range(math.ceil(SCREEN_HEIGHT // DIRT_BG.get_width()) + 1):
             background.blit(DIRT_BG, (i * DIRT_BG.get_width(), j * DIRT_BG.get_width()))
-
-    player = Player(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, RED_PROFILE)
-    enemy = Player(SCREEN_WIDTH // 4 * 3, SCREEN_HEIGHT // 2, BLUE_PROFILE)
-
-    elements = pygame.sprite.RenderPlain(())
-    elements.add(player.get_sprites(), enemy.get_sprites())
-
-    pixels = pygame.sprite.RenderPlain(())
 
     done = False
     while not done:
         # GAME CLOCK #
         clock.tick(FRAME_RATE)
+        game_timer += 1
 
         # EVENT HANDLER #
         for event in pygame.event.get():
@@ -353,13 +465,14 @@ def main():
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # left-click
-                    player.shoot(10)
+                    player.shoot(BIG_SHOT_SIZE)
                 if event.button == 2:  # right-click
                     pass
                 if event.button == 3:  # middle-click
                     pass
 
         # PLAYER MOVEMENT #
+        " TANK MOVEMENT "
         keys = pygame.key.get_pressed()
         if keys[pygame.K_d]:  # right key pressed
             player.turn_right()
@@ -369,37 +482,55 @@ def main():
             player.go()
         if keys[pygame.K_s]:  # up key pressed
             player.stop()
-
+        " RAPID FIRE "
         buttons = pygame.mouse.get_pressed()
         if buttons[2] == 1:
-            player.shoot(4)
-
+            player.shoot(SMALL_SHOT_SIZE)
+        " CANNON AIMING "
         player.aim(pygame.mouse.get_pos())
-        # enemy.aim(player.get_pos())
 
         # SCREEN UPDATES #
         main_screen.fill(COLOR_BLACK)
         main_screen.blit(background, (0, 0))
+        rock_bg = main_screen.blit(ROCK_BG,
+                                   (SCREEN_WIDTH // 2 - ROCK_BG.get_width(), SCREEN_HEIGHT // 2 - ROCK_BG.get_width()))
+        draw_info_banner()
 
+        # PLAYER UPDATE #
         player.update()
+        temp = player.get_data()
+        enemy.set_data(temp)
         enemy.update()
 
+        # PLAYER COLLISIONS #
+        if pygame.sprite.spritecollideany(player.tank, enemy.body):
+            player.tank.collision = True
+        else:
+            player.tank.collision = False
+
+        # HIT DETECTION #
         player_hit = pygame.sprite.spritecollide(enemy.tank, player.shots, True)
         if player_hit:
+            # enemy.take_damage(player_hit[0].size)
             for i in range(5):
                 pixels.add(HitPixel(player_hit[0].pos, player_hit[0].size))
+
         enemy_hit = pygame.sprite.spritecollide(player.tank, enemy.shots, True)
         if enemy_hit:
+            player.take_damage(enemy_hit[0].size)
             for i in range(5):
                 pixels.add(HitPixel(enemy_hit[0].pos, enemy_hit[0].size))
 
-        temp = player.get_data()
-        enemy.set_data(temp)
+        if player.tank.rect.colliderect(rock_bg):
+            player.tank.collision = True
+        else:
+            player.tank.collision = False
 
+        # PROCESS ALL UPDATES #
         pixels.update()
         player.shots.draw(main_screen)
         enemy.shots.draw(main_screen)
-        elements.draw(main_screen)
+        tanks.draw(main_screen)
         pixels.draw(main_screen)
 
         pygame.display.update()
