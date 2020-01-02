@@ -6,6 +6,7 @@ import math
 import time
 from pygame.math import Vector2
 import pickle
+from Tank import Tank
 
 # GET SYSTEM ARGUMENTS #
 if len(sys.argv) > 1:
@@ -26,13 +27,11 @@ SCREEN_HEIGHT = 760
 FRAME_RATE = 60
 
 # GAME ELEMENT SETTINGS #
-TANK_WIDTH = 40
-TANK_LENGTH = 60
 TURN_SPEED = 4
 MAX_HEALTH = 1000
-ACCELERATION = .005
 MAX_SPEED = 0.3
 FRICTION = 0.002
+ACCELERATION = .005
 BIG_SHOT_SIZE = 10
 BIG_SHOT_MAX = 5
 BIG_SHOT_SPEED = 10
@@ -75,126 +74,6 @@ def make_background_tile(colors, width=10, height=10):
     return surf
 
 
-class Tank(pygame.sprite.Sprite):
-
-    def __init__(self, xpos, ypos, color):
-        pygame.sprite.Sprite.__init__(self)
-        self.color_light = color["light"]
-        self.color_dark = color["dark"]
-        self.image = pygame.Surface((TANK_LENGTH, TANK_WIDTH), pygame.SRCALPHA)
-        pygame.draw.rect(self.image, self.color_light, (0, 0, TANK_LENGTH, TANK_WIDTH))
-        pygame.draw.rect(self.image, self.color_dark, (0, 0, TANK_LENGTH, TANK_WIDTH), 1)
-        pygame.draw.rect(self.image, self.color_dark, (TANK_LENGTH - 5, 10, 5, TANK_WIDTH - 20), 1)
-        pygame.draw.polygon(self.image, self.color_dark,
-                            [(0, 8),
-                             (0, TANK_WIDTH - 8),
-                             (20, TANK_WIDTH // 2 + 8),
-                             (20, TANK_WIDTH // 2 - 8)], 1)
-        for i in range(-1, (TANK_LENGTH // 5 + 1)):
-            pygame.draw.rect(self.image, self.color_dark, (i * 5, 0, 5, 8), 1)
-            pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
-        self.orig_image = self.image
-        self.pos = Vector2((xpos, ypos))
-        self.last_pos = list()
-        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
-        self.direction = 0
-        self.speed = 0
-        self.track = 0
-        self.collision = False
-
-    def update(self, *args):
-        if self.speed != 0:
-            self._move_tracks()
-        self._rotate()
-        self._move()
-        # Slow down p if not accelerating
-        if self.speed > 0:
-            self.speed = max(0, self.speed - FRICTION)
-
-    def _rotate(self):
-        self.image = pygame.transform.rotozoom(self.orig_image, -self.direction, 1)
-        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
-
-    def _move(self):
-        if not self.collision:
-            self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))
-            self.pos.x = min(self.pos.x, SCREEN_WIDTH - TANK_LENGTH // 2)
-            self.pos.x = max(TANK_LENGTH // 2, self.pos.x)
-            self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction))
-            self.pos.y = min(self.pos.y, SCREEN_HEIGHT - TANK_LENGTH // 2)
-            self.pos.y = max(TANK_LENGTH // 2, self.pos.y)
-        else:
-            self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction + 180))
-            self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction + 180))
-            self.speed += FRICTION
-        if (self.pos.x == 0 + TANK_LENGTH // 2 or self.pos.x == SCREEN_WIDTH - TANK_LENGTH // 2) \
-                or (self.pos.y == 0 + TANK_LENGTH // 2 or self.pos.y == SCREEN_HEIGHT - TANK_LENGTH // 2):
-            self.speed = max(0, self.speed - ACCELERATION)
-        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
-
-    def _move_tracks(self):
-        self.track = (self.track + self.speed * 10) % 5
-        pygame.draw.rect(self.orig_image, self.color_light, (0, 0, TANK_LENGTH, 8))
-        pygame.draw.rect(self.orig_image, self.color_light, (0, TANK_WIDTH - 8, TANK_LENGTH, 8))
-        for i in range(-1, (TANK_LENGTH // 5) + 1):
-            pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), 0, 5, 8), 1)
-            pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), TANK_WIDTH - 8, 5, 8), 1)
-
-    def turn(self, a):
-        self.direction = (self.direction + a) % 360
-
-    def accelerate(self, t):
-        self.speed += t
-        self.speed = min(self.speed, MAX_SPEED)
-        self.speed = max(0, self.speed)
-
-
-class Cannon(pygame.sprite.Sprite):
-
-    def __init__(self, tank_pos, color):
-        self.color_medium = color["medium"]
-        self.color_dark = color["dark"]
-        pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((80, 20), pygame.SRCALPHA)
-        pygame.draw.rect(self.image, self.color_medium, (30, 7, 50, 6))
-        pygame.draw.rect(self.image, self.color_dark, (30, 7, 50, 6), 1)
-        pygame.draw.rect(self.image, self.color_medium, (20, 0, 30, 20))
-        pygame.draw.rect(self.image, self.color_dark, (20, 0, 30, 20), 1)
-        pygame.draw.rect(self.image, self.color_medium, (70, 5, 10, 10))
-        pygame.draw.rect(self.image, self.color_dark, (70, 5, 10, 10), 1)
-        pygame.draw.circle(self.image, self.color_dark, (40, 10), 7, 1)
-        self.orig_image = self.image
-        self.rect = self.image.get_rect(center=(int(tank_pos.x), int(tank_pos.y)))
-        self.pos = tank_pos
-        self.offset = Vector2(0, 0)
-        self.angle = 0
-        self.x = 0
-        self.y = 0
-
-    def update(self, *args):
-        if len(args) != 0:
-            self.pos = args[0]
-        self._rotate()
-
-    def _rotate(self):
-        self.image = pygame.transform.rotozoom(self.orig_image, self.angle, 1)
-        offset_rotated = self.offset.rotate(math.radians(self.angle)) + self.pos
-        self.rect = self.image.get_rect(center=(int(offset_rotated.x), int(offset_rotated.y)))
-
-    def aim(self, target):
-        self.x, self.y = target
-        self.x -= self.pos.x
-        self.y -= self.pos.y
-        angle = Vector2(0, 0).angle_to(Vector2(self.x, self.y))
-        if angle == 0:
-            pass
-        elif angle < 0:
-            angle *= -1
-        else:
-            angle = 360 - angle
-        self.angle = int(angle)
-
-
 class Shot(pygame.sprite.Sprite):
 
     def __init__(self, size, p):
@@ -205,9 +84,9 @@ class Shot(pygame.sprite.Sprite):
         self.image.set_colorkey(COLOR_WHITE)
         pygame.draw.circle(self.image, self.color_ultralight, (size // 2, size // 2), size // 2)
         self.rect = self.image.get_rect()
-        self.aim = -math.radians(p.cannon.angle)
-        self.rect.centerx = int(p.cannon.pos.x + math.cos(self.aim) * 30)
-        self.rect.centery = int(p.cannon.pos.y + math.sin(self.aim) * 30)
+        self.aim = -math.radians(p.tank.cannon.angle)
+        self.rect.centerx = int(p.tank.cannon.pos.x + math.cos(self.aim) * 30)
+        self.rect.centery = int(p.tank.cannon.pos.y + math.sin(self.aim) * 30)
         self.size = size
         if self.size == BIG_SHOT_SIZE:
             self.speed = BIG_SHOT_SPEED
@@ -215,7 +94,7 @@ class Shot(pygame.sprite.Sprite):
             self.speed = SMALL_SHOT_SPEED
         self.tank_aim = p.tank.direction
         self.tank_speed = p.tank.speed
-        self.pos = Vector2(p.cannon.pos)
+        self.pos = Vector2(p.tank.cannon.pos)
 
     def update(self, *args):
         if 0 < self.rect.centerx < SCREEN_WIDTH and 0 < self.rect.centery < SCREEN_HEIGHT:
@@ -234,22 +113,59 @@ class Player:
     def __init__(self, xpos, ypos, color):
         self.color = color
         self.tank = Tank(xpos, ypos, self.color)
-        self.cannon = Cannon(self.tank.pos, self.color)
         self.shots = pygame.sprite.RenderPlain(())
-        self.parts = pygame.sprite.RenderPlain((self.tank, self.cannon))
-        self.body = pygame.sprite.GroupSingle(self.tank)
+        self.parts = pygame.sprite.RenderPlain(self.tank)
+        self.target = (0, 0)
         self.last_shot = 0
         self.health = 1000
         self.big_shots = BIG_SHOT_MAX
         self.small_shots = SMALL_SHOT_MAX
 
-    def update(self):
+    def update(self, target=None):
+
         if game_timer % 60 == 0:
             self.big_shots = min(self.big_shots + 1, BIG_SHOT_MAX)
         if game_timer % 20 == 0:
             self.small_shots = min(self.small_shots + 1, SMALL_SHOT_MAX)
-        self.parts.update(self.tank.pos)
+
+        if target:
+            self.target = target
+
+        if self.tank.speed <= 0:
+            self.tank.speed = 0
+        else:
+            self.tank.speed -= FRICTION
+
+        self.tank.aim_cannon(self.target)
+        self.parts.update()
         self.shots.update()
+
+        element = pygame.sprite.spritecollideany(self.tank, obstructions)
+        if element and element != self.tank:
+            angle = Vector2(0, 0).angle_to(self.tank.pos - element.pos)
+            if abs(angle) > 135:       # RIGHT SIDE
+                self.tank.rect.right = element.rect.left
+            elif 0 < abs(angle) < 45:  # LEFT SIDE
+                self.tank.rect.left = element.rect.right
+            elif 45 < angle < 135:     # TOP SIDE
+                self.tank.rect.top = element.rect.bottom
+            else:                      # BOTTOM SIDE
+                self.tank.rect.bottom = element.rect.top
+            self.tank.pos = Vector2(self.tank.rect.center)
+            self.tank.speed = max(0, self.tank.speed - ACCELERATION)
+
+        if not main_screen.get_rect().contains(self.tank):
+            rect = self.tank.rect
+            if rect.top <= 0:
+                rect.top = 0
+            if rect.bottom >= SCREEN_HEIGHT:
+                rect.rect.bottom = SCREEN_HEIGHT
+            if rect.left <= 0:
+                rect.left = 0
+            if rect.right >= SCREEN_WIDTH:
+                rect.right = SCREEN_WIDTH
+            self.tank.pos = Vector2(rect.center)
+            self.tank.speed = max(0, self.tank.speed - ACCELERATION)
 
     def turn_right(self):
         self.tank.turn(TURN_SPEED)
@@ -258,10 +174,12 @@ class Player:
         self.tank.turn(-TURN_SPEED)
 
     def go(self):
-        self.tank.accelerate(ACCELERATION)
+        if self.tank.speed < MAX_SPEED:
+            self.tank.speed += ACCELERATION
 
     def stop(self):
-        self.tank.accelerate(-ACCELERATION)
+        if self.tank.speed > 0:
+            self.tank.speed -= ACCELERATION
 
     def shoot(self, size):
         log_shot = False
@@ -278,9 +196,6 @@ class Player:
             self.shots.add(shot)
             self.last_shot = shot.size
 
-    def aim(self, target):
-        self.cannon.aim(target)
-
     def take_damage(self, size):
         if size == BIG_SHOT_SIZE:
             self.health = max(0, self.health - 10)
@@ -291,13 +206,13 @@ class Player:
         return self.tank.pos
 
     def get_sprites(self):
-        return self.tank, self.cannon
+        return self.tank, self.tank.cannon
 
     def get_data(self):
         data = {"pos": self.tank.pos,
                 "direction": self.tank.direction,
                 "speed": self.tank.speed,
-                "angle": self.cannon.angle,
+                "target": self.target,
                 "last_shot": self.last_shot,
                 "health": self.health,
                 "big_shots": self.big_shots,
@@ -311,7 +226,7 @@ class Player:
         self.tank.pos.x += 500  ########################################
         self.tank.direction = data["direction"]
         self.tank.speed = data["speed"]
-        self.cannon.angle = data["angle"]
+        self.target = data["target"]
         if data["last_shot"]:
             shot = Shot(data["last_shot"], self)
             self.shots.add(shot)
@@ -423,7 +338,9 @@ player = Player(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, RED_PROFILE)
 enemy = Player(SCREEN_WIDTH // 4 * 3, SCREEN_HEIGHT // 2, BLUE_PROFILE)
 
 # SPRITE CONTAINER INITIALIZATION #
-tanks = pygame.sprite.RenderPlain((player.get_sprites(), enemy.get_sprites()))
+tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
+obstructions = pygame.sprite.RenderPlain((enemy.tank))
+map_elements = pygame.sprite.RenderPlain(())
 pixels = pygame.sprite.RenderPlain(())
 
 
@@ -473,45 +390,30 @@ def main():
         buttons = pygame.mouse.get_pressed()
         if buttons[2] == 1:
             player.shoot(SMALL_SHOT_SIZE)
-        " CANNON AIMING "
-        player.aim(pygame.mouse.get_pos())
 
         # SCREEN UPDATES #
         main_screen.fill(COLOR_BLACK)
         main_screen.blit(background, (0, 0))
-        rock_bg = main_screen.blit(ROCK_BG,
-                                   (SCREEN_WIDTH // 2 - ROCK_BG.get_width(), SCREEN_HEIGHT // 2 - ROCK_BG.get_width()))
         draw_info_banner()
 
         # PLAYER UPDATE #
-        player.update()
-        temp = player.get_data()
-        enemy.set_data(temp)
+        player.update(pygame.mouse.get_pos())
+        #temp = player.get_data()
+        #enemy.set_data(temp)
         enemy.update()
 
-        # PLAYER COLLISIONS #
-        if pygame.sprite.spritecollideany(player.tank, enemy.body):
-            player.tank.collision = True
-        else:
-            player.tank.collision = False
-
         # HIT DETECTION #
-        player_hit = pygame.sprite.spritecollide(enemy.tank, player.shots, True)
-        if player_hit:
-            # enemy.take_damage(player_hit[0].size)
+        enemy_shot = pygame.sprite.spritecollide(enemy.tank, player.shots, True)
+        if enemy_shot:
+            # enemy.take_damage(enemy_shot[0].size)
             for i in range(5):
-                pixels.add(HitPixel(player_hit[0].pos, player_hit[0].size))
+                pixels.add(HitPixel(enemy_shot[0].pos, enemy_shot[0].size))
 
-        enemy_hit = pygame.sprite.spritecollide(player.tank, enemy.shots, True)
-        if enemy_hit:
-            player.take_damage(enemy_hit[0].size)
+        player_shot = pygame.sprite.spritecollide(player.tank, enemy.shots, True)
+        if player_shot:
+            player.take_damage(player_shot[0].size)
             for i in range(5):
-                pixels.add(HitPixel(enemy_hit[0].pos, enemy_hit[0].size))
-
-        if player.tank.rect.colliderect(rock_bg):
-            player.tank.collision = True
-        else:
-            player.tank.collision = False
+                pixels.add(HitPixel(player_shot[0].pos, player_shot[0].size))
 
         # PROCESS ALL UPDATES #
         pixels.update()
