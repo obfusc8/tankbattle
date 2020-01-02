@@ -60,19 +60,6 @@ BLUE_PROFILE = {"light": (100, 100, 220),
                 "dark": (0, 0, 100),
                 "full": COLOR_BLUE}
 
-# CUSTOM EVENTS #
-MY_EVENT = pygame.USEREVENT + 0
-
-""" SPRITE TEMPLATE
-class MySprite(pygame.sprite.Sprite):
-
-    def __init__(self, *args):
-        pygame.sprite.Sprite.__init__(self)
-
-    def update(self, *args):
-        pass
-"""
-
 
 def make_background_tile(colors, width=10, height=10):
     width = width
