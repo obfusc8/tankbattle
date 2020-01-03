@@ -33,14 +33,16 @@ class Tank(pygame.sprite.Sprite):
         self.speed = 0
         self.track = 0
         self.aim = self.cannon.angle
+        self.dead = False
 
     def update(self, *args):
-        if self.speed != 0:
-            self._move_tracks()
-        self._rotate()
-        self._move()
-        self.cannon.update(self.pos)
-        self.aim = self.cannon.angle
+        if not self.dead:
+            if self.speed != 0:
+                self._move_tracks()
+            self._rotate()
+            self._move()
+            self.cannon.update(self.pos)
+            self.aim = self.cannon.angle
 
     def _rotate(self):
         self.image = pygame.transform.rotozoom(self.orig_image, -self.direction, 1)
@@ -64,6 +66,13 @@ class Tank(pygame.sprite.Sprite):
 
     def aim_cannon(self, target):
         self.cannon.aim(target)
+
+    def destroy(self):
+        self.dead = True
+        rect = self.rect
+        pygame.draw.rect(self.orig_image, (0, 0, 0, 125), (0, 0, TANK_LENGTH, TANK_WIDTH))
+        self._rotate()
+        self.cannon.kill()
 
 
 class Cannon(pygame.sprite.Sprite):
