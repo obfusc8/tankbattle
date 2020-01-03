@@ -65,21 +65,21 @@ BLUE_PROFILE = {"light": (100, 100, 220),
 
 # 1150 x 850 = 23 x 17 @ 50px Cells
 GAME_MAP1 = "" \
-            "............R............" \
-            "............R............" \
-            "............R............" \
-            "............R............" \
-            "............R............" \
             "........................." \
-            "...R.................R..." \
-            "...R.................R..." \
-            "...R.................R..." \
             "........................." \
+            ".......RRRRRRRRRRR......." \
             "............R............" \
             "............R............" \
+            "...R.................R..." \
+            "...R.....R.....R.....R..." \
+            "...R.....RRRRRRR.....R..." \
+            "...R.....R.....R.....R..." \
+            "...R.................R..." \
             "............R............" \
             "............R............" \
-            "............R............"
+            ".......RRRRRRRRRRR......." \
+            "........................." \
+            "........................."
 
 
 def make_background_tile(colors, width=10, height=10, border=0):
@@ -272,12 +272,13 @@ class Player:
                 "big_shots": self.big_shots,
                 "small_shots": self.small_shots}
         self.last_shot = 0
+        #pickle.dump(data, f)
         return pickle.dumps(data, -1)
 
     def receive_data(self, data):
-        data = pickle.loads(data)
+        #data = pickle.loads(data)
         self.tank.pos = data["pos"]
-        self.tank.pos.x += 500  ########################################
+        #self.tank.pos.x += 500  ########################################
         self.tank.direction = data["direction"]
         self.tank.speed = data["speed"]
         self.target = data["target"]
@@ -375,8 +376,8 @@ WATER_BG = make_background_tile(WATER_COLORS, 50, 50, 1)
 element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
 
 # PLAYER ELEMENTS #
-player = Player(SCREEN_WIDTH // 4, SCREEN_HEIGHT // 2, RED_PROFILE)
-enemy = Player(SCREEN_WIDTH // 4 * 3, SCREEN_HEIGHT // 2, BLUE_PROFILE)
+player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 2, RED_PROFILE)
+enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 2, BLUE_PROFILE)
 
 # SPRITE CONTAINER INITIALIZATION #
 tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
@@ -432,6 +433,9 @@ def place_elements(element_map):
                     obstructions.add(element)
 
 
+#f = open("tankdata", "wb")
+
+
 def main():
     global main_screen, player, enemy, game_timer
 
@@ -441,11 +445,14 @@ def main():
 
     place_elements(GAME_MAP1)
 
-    f = open("tankdata.txt", "r")
-    if f.mode == "r":
-        contents = f.readlines()
-    else:
-        print("cant read file")
+    contents = list()
+    f = open("tankdata", "rb")
+    while True:
+        try:
+            contents.append(pickle.load(f))
+            contents[-1]["pos"].x += 500
+        except EOFError:
+            break
     move_counter = 0
     move_size = len(contents)
 
@@ -496,13 +503,10 @@ def main():
 
         # ELEMENT UPDATES #
         player.update(pygame.mouse.get_pos())
-        """
         #temp = player.send_data()
         temp = contents[move_counter]
-        temp = codecs.unicode_escape_decode(temp)[0].encode('utf-8').replace('\\xc2','')
         move_counter = (move_counter + 1) % move_size
-        enemy.receive_data(temp[0])
-        """
+        enemy.receive_data(temp)
         enemy.update()
         map_elements.update()
         pixels.update()
@@ -517,7 +521,10 @@ def main():
         pygame.display.update()
 
     # CLEAN UP & QUIT #
-    f.close() ###########################################
+    try:
+        f.close() ###########################################
+    except:
+        pass
     pygame.quit()
 
 
