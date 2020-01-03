@@ -1,3 +1,4 @@
+import codecs
 import os
 import random
 import sys
@@ -69,11 +70,11 @@ GAME_MAP1 = "" \
             "............R............" \
             "............R............" \
             "............R............" \
-            "............G............" \
-            "............G............" \
-            "............G............" \
-            "............G............" \
-            "............G............" \
+            "........................." \
+            "...R.................R..." \
+            "...R.................R..." \
+            "...R.................R..." \
+            "........................." \
             "............R............" \
             "............R............" \
             "............R............" \
@@ -128,24 +129,22 @@ class Shot(pygame.sprite.Sprite):
         self.image.set_colorkey(COLOR_WHITE)
         pygame.draw.circle(self.image, self.color_ultralight, (size // 2, size // 2), size // 2)
         self.rect = self.image.get_rect()
-        self.aim = -math.radians(p.tank.cannon.angle)
-        self.rect.centerx = int(p.tank.cannon.pos.x + math.cos(self.aim) * 30)
-        self.rect.centery = int(p.tank.cannon.pos.y + math.sin(self.aim) * 30)
-        self.size = size
-        if self.size == BIG_SHOT_SIZE:
-            self.speed = BIG_SHOT_SPEED
-        elif self.size == SMALL_SHOT_SIZE:
-            self.speed = SMALL_SHOT_SPEED
-        self.tank_aim = p.tank.direction
-        self.tank_speed = p.tank.speed
-        self.pos = Vector2(p.tank.pos)
+        self.pos = p.tank.pos
+        self.size = size  ################### DELETE
+        if size == BIG_SHOT_SIZE:
+            speed = BIG_SHOT_SPEED
+        elif size == SMALL_SHOT_SIZE:
+            speed = SMALL_SHOT_SPEED
+        aim = -math.radians(p.tank.cannon.angle)
+        self.rect.centerx = int(p.tank.cannon.pos.x + math.cos(aim) * 30)
+        self.rect.centery = int(p.tank.cannon.pos.y + math.sin(aim) * 30)
+        self.xv = int(speed * math.cos(aim) + p.tank.speed * math.cos(p.tank.direction))
+        self.yv = int(speed * math.sin(aim) + p.tank.speed * math.sin(p.tank.direction))
 
     def update(self, *args):
         if main_screen.get_rect().contains(self):
-            self.rect.centerx += int(self.speed * math.cos(self.aim))
-            self.rect.centery += int(self.speed * math.sin(self.aim))
-            self.rect.centerx += int(self.tank_speed * math.cos(self.tank_aim))
-            self.rect.centery += int(self.tank_speed * math.sin(self.tank_aim))
+            self.rect.centerx += self.xv
+            self.rect.centery += self.yv
             self.pos = Vector2(self.rect.center)
         else:
             self.kill()
@@ -166,7 +165,6 @@ class Player:
         self.small_shots = SMALL_SHOT_MAX
 
     def update(self, target=None):
-
         if game_timer % 60 == 0:
             self.big_shots = min(self.big_shots + 1, BIG_SHOT_MAX)
         if game_timer % 20 == 0:
@@ -248,12 +246,6 @@ class Player:
                 log_shot = True
         if log_shot:
             shot = Shot(size, self)
-            data = {"ID": "shot",
-                    "size": size,
-                    "pos": self.tank.pos,
-                    "direction": self.tank.direction,
-                    "speed": self.tank.speed,
-                    "target": self.target}
             self.shots.add(shot)
             shots.add(shot)
             self.last_shot = shot.size
@@ -270,7 +262,7 @@ class Player:
     def get_sprites(self):
         return self.tank, self.tank.cannon
 
-    def get_data(self):
+    def send_data(self):
         data = {"pos": self.tank.pos,
                 "direction": self.tank.direction,
                 "speed": self.tank.speed,
@@ -282,7 +274,7 @@ class Player:
         self.last_shot = 0
         return pickle.dumps(data, -1)
 
-    def set_data(self, data):
+    def receive_data(self, data):
         data = pickle.loads(data)
         self.tank.pos = data["pos"]
         self.tank.pos.x += 500  ########################################
@@ -434,7 +426,7 @@ def place_elements(element_map):
             n = i * width + j
             if element_map[n] != ".":
                 k = element_map[n]
-                element = Element(element_key[element_map[n]], (j*50+25, i*50+25))
+                element = Element(element_key[element_map[n]], (j * 50 + 25, i * 50 + 25))
                 map_elements.add(element)
                 if element_map[n] == "R":
                     obstructions.add(element)
@@ -448,6 +440,14 @@ def main():
             background.blit(DIRT_BG, (i * DIRT_BG.get_width(), j * DIRT_BG.get_width()))
 
     place_elements(GAME_MAP1)
+
+    f = open("tankdata.txt", "r")
+    if f.mode == "r":
+        contents = f.readlines()
+    else:
+        print("cant read file")
+    move_counter = 0
+    move_size = len(contents)
 
     done = False
     while not done:
@@ -496,8 +496,13 @@ def main():
 
         # ELEMENT UPDATES #
         player.update(pygame.mouse.get_pos())
-        temp = player.get_data()
-        enemy.set_data(temp)
+        """
+        #temp = player.send_data()
+        temp = contents[move_counter]
+        temp = codecs.unicode_escape_decode(temp)[0].encode('utf-8').replace('\\xc2','')
+        move_counter = (move_counter + 1) % move_size
+        enemy.receive_data(temp[0])
+        """
         enemy.update()
         map_elements.update()
         pixels.update()
@@ -512,6 +517,7 @@ def main():
         pygame.display.update()
 
     # CLEAN UP & QUIT #
+    f.close() ###########################################
     pygame.quit()
 
 
