@@ -29,6 +29,7 @@ class Tank(pygame.sprite.Sprite):
             pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
         self.orig_image = self.image
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+        self.mask = pygame.mask.from_surface(self.image)
         self.direction = 0
         self.speed = 0
         self.track = 0
@@ -47,6 +48,8 @@ class Tank(pygame.sprite.Sprite):
     def _rotate(self):
         self.image = pygame.transform.rotozoom(self.orig_image, -self.direction, 1)
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+        self.mask = pygame.mask.from_surface(self.image)
+
 
     def _move(self):
         self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))

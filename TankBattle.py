@@ -1,7 +1,10 @@
 import codecs
 import os
 import random
+import socket
 import sys
+import threading
+
 import pygame
 import math
 import time
@@ -119,6 +122,22 @@ def load_sound(name):
     return sound
 
 
+def draw_text(text, surface, font, x, y, color, bg, pos='left'):
+    text_image = font.render(text, 1, color, bg)
+    text_image.set_colorkey(bg)
+    text_rect = text_image.get_rect()
+
+    if pos == 'left':
+        text_rect.topleft = (int(x), int(y))
+    elif pos == 'center':
+        text_rect.midtop = (int(x), int(y))
+    elif pos == 'right':
+        text_rect.topright = (int(x), int(y))
+
+    surface.blit(text_image, text_rect)
+    return text_rect
+
+
 def make_background_tile(colors, width=10, height=10, border=0):
     width = width
     height = height
@@ -140,22 +159,6 @@ def make_background_tile(colors, width=10, height=10, border=0):
     return image
 
 
-def draw_text(text, surface, font, x, y, color, bg, pos='left'):
-    text_image = font.render(text, 1, color, bg)
-    text_image.set_colorkey(bg)
-    text_rect = text_image.get_rect()
-
-    if pos == 'left':
-        text_rect.topleft = (int(x), int(y))
-    elif pos == 'center':
-        text_rect.midtop = (int(x), int(y))
-    elif pos == 'right':
-        text_rect.topright = (int(x), int(y))
-
-    surface.blit(text_image, text_rect)
-    return text_rect
-
-
 class Shot(pygame.sprite.Sprite):
 
     def __init__(self, size, p):
@@ -166,6 +169,7 @@ class Shot(pygame.sprite.Sprite):
         self.image.set_colorkey(COLOR_WHITE)
         pygame.draw.circle(self.image, self.color_ultralight, (size // 2, size // 2), size // 2)
         self.rect = self.image.get_rect()
+        self.mask = pygame.mask.from_surface(self.image)
         self.pos = p.tank.pos
         self.size = size  ################### DELETE
         if size == BIG_SHOT_SIZE:
@@ -188,6 +192,64 @@ class Shot(pygame.sprite.Sprite):
             del self
 
 
+class HitPixel(pygame.sprite.Sprite):
+
+    def __init__(self, xy=(0, 0), size=5, alpha_fade=25):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.Surface((random.randrange(2, size), random.randrange(2, size)))
+        self.image.fill(random.choice(PIXEL_COLORS))
+        self.rect = self.image.get_rect()
+        self.angle = random.random() * (2 * math.pi)
+        self.rect.center = (int(xy[0]), int(xy[1]))
+        self.speed = random.random() * 40
+        self.image.set_alpha(255)
+        self.alpha_fade = alpha_fade
+
+    def update(self, *args):
+        if self.rect.x > SCREEN_WIDTH - self.image.get_width() or self.rect.x < 0:
+            self.angle = math.pi - self.angle
+        if self.rect.y > SCREEN_HEIGHT - self.image.get_height() or self.rect.y < 0:
+            self.angle *= -1
+        self.rect.centerx += int(self.speed * math.cos(self.angle))
+        self.rect.centery += int(self.speed * math.sin(self.angle))
+        self.image.set_alpha(self.image.get_alpha() - self.alpha_fade)
+        if self.image.get_alpha() <= 0:
+            self.kill()
+            del self
+
+
+class Element(pygame.sprite.Sprite):
+
+    def __init__(self, image, xy):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.mask = pygame.mask.from_surface(self.image)
+        self.rect.center = xy
+        self.pos = Vector2(xy)
+        self.health = 100
+        self.alpha = 255
+
+    def update(self, *args):
+        if self in obstructions:
+            shot = pygame.sprite.spritecollide(self, shots, False)
+            if shot:
+                for s in shot:
+                    for i in range(5):
+                        pixels.add(HitPixel(s.pos, s.size))
+                    s.kill()
+                    del s
+                    """ WILL NEED TO COMMUNICATE GAME STATE BEFORE ADDING DESTRUCTION
+                    self.health -= 1
+                    self.alpha -= 2
+                    self.image.set_alpha(self.alpha)
+                    if self.health < 0:
+                        for i in range(5):
+                            pixels.add(HitPixel(self.pos, self.image.get_width()))
+                        obstructions.remove(self)
+    """
+
+
 class Player:
 
     def __init__(self, xpos, ypos, color):
@@ -197,7 +259,7 @@ class Player:
         self.parts = pygame.sprite.RenderPlain(self.tank)
         self.target = (0, 0)
         self.last_shot = 0
-        self.health = 50
+        self.health = 1000
         self.big_shots = BIG_SHOT_MAX
         self.small_shots = SMALL_SHOT_MAX
         self.friction = FRICTION
@@ -219,7 +281,7 @@ class Player:
             self.tank.aim_cannon(self.target)
             self.parts.update()
 
-            element = pygame.sprite.spritecollide(self.tank, obstructions, False)
+            element = pygame.sprite.spritecollide(self.tank, obstructions, False, pygame.sprite.collide_mask)
             if element:
                 for e in element:
                     if e != self.tank:
@@ -234,7 +296,7 @@ class Player:
                         if -135 < angle < -45:  # BOTTOM SIDE
                             rect.bottom = e.rect.top
                         self.tank.pos = Vector2(rect.center)
-                        # self.tank.speed = max(0, self.tank.speed - ACCELERATION)
+                        self.tank.speed = max(0, self.tank.speed - ACCELERATION)
 
             if not main_screen.get_rect().contains(self.tank):
                 rect = self.tank.rect
@@ -255,7 +317,7 @@ class Player:
             else:
                 self.friction = FRICTION
 
-            shot = pygame.sprite.spritecollide(self.tank, shots, False)
+            shot = pygame.sprite.spritecollide(self.tank, shots, False, pygame.sprite.collide_mask)
             if shot and shot[0] not in self.shots:
                 for i in range(5):
                     pixels.add(HitPixel(shot[0].pos, shot[0].size))
@@ -292,11 +354,13 @@ class Player:
                 if self.big_shots > 0:
                     self.big_shots -= 1
                     log_shot = True
-                    gun_sound.play()
+                    if sounds_on:
+                        gun_sound.play()
             elif size == SMALL_SHOT_SIZE:
                 if self.small_shots > 0:
                     machine_gun_sound.stop()
-                    machine_gun_sound.play()
+                    if sounds_on:
+                        machine_gun_sound.play()
                     self.small_shots -= 1
                     log_shot = True
             if log_shot:
@@ -346,10 +410,12 @@ class Player:
         if data["last_shot"]:
             shot = Shot(data["last_shot"], self)
             if shot.size == BIG_SHOT_SIZE:
-                gun_sound.play()
+                if sounds_on:
+                    gun_sound.play()
             if shot.size == SMALL_SHOT_SIZE:
                 machine_gun_sound.stop()
-                machine_gun_sound.play()
+                if sounds_on:
+                    machine_gun_sound.play()
             self.shots.add(shot)
             shots.add(shot)
         self.health = data["health"]
@@ -357,68 +423,21 @@ class Player:
         self.small_shots = data["small_shots"]
 
 
-class HitPixel(pygame.sprite.Sprite):
-
-    def __init__(self, xy=(0, 0), size=5, alpha_fade=25):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((random.randrange(2, size), random.randrange(2, size)))
-        self.image.fill(random.choice(PIXEL_COLORS))
-        self.rect = self.image.get_rect()
-        self.angle = random.random() * (2 * math.pi)
-        self.rect.center = (int(xy[0]), int(xy[1]))
-        self.speed = random.random() * 40
-        self.image.set_alpha(255)
-        self.alpha_fade = alpha_fade
-
-    def update(self, *args):
-        if self.rect.x > SCREEN_WIDTH - self.image.get_width() or self.rect.x < 0:
-            self.angle = math.pi - self.angle
-        if self.rect.y > SCREEN_HEIGHT - self.image.get_height() or self.rect.y < 0:
-            self.angle *= -1
-        self.rect.centerx += int(self.speed * math.cos(self.angle))
-        self.rect.centery += int(self.speed * math.sin(self.angle))
-        self.image.set_alpha(self.image.get_alpha() - self.alpha_fade)
-        if self.image.get_alpha() <= 0:
-            self.kill()
-            del self
-
-
-class Element(pygame.sprite.Sprite):
-
-    def __init__(self, image, xy):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = image
-        self.rect = self.image.get_rect()
-        self.rect.center = xy
-        self.pos = Vector2(xy)
-        self.health = 100
-        self.alpha = 255
-
-    def update(self, *args):
-        if self in obstructions:
-            shot = pygame.sprite.spritecollide(self, shots, False)
-            if shot:
-                for s in shot:
-                    for i in range(5):
-                        pixels.add(HitPixel(s.pos, s.size))
-                    s.kill()
-                    del s
-                    """ WILL NEED TO COMMUNICATE GAME STATE BEFORE ADDING DESTRUCTION
-                    self.health -= 1
-                    self.alpha -= 2
-                    self.image.set_alpha(self.alpha)
-                    if self.health < 0:
-                        for i in range(5):
-                            pixels.add(HitPixel(self.pos, self.image.get_width()))
-                        obstructions.remove(self)
-    """
-
-
 # GAME INITIALIZATION #
 pygame.init()
 clock = pygame.time.Clock()
 TIME_START = pygame.time.get_ticks()
 game_timer = 0
+
+# NETWORKING SETUP #
+if len(sys.argv) > 1:
+    SERVER_IP = sys.argv[1]
+else:
+    # SERVER_IP = "192.168.86.38"
+    SERVER_IP = "SAL-1908-KJ"
+PORT = 9998
+SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+EVENT_CLOSE_SOCKET = pygame.USEREVENT + 0
 
 # FONT SETTINGS #
 TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
@@ -445,11 +464,20 @@ SAND_BG = make_background_tile(SAND_COLORS, 50, 50)
 GRASS_BG = make_background_tile(GRASS_COLORS, 50, 50)
 WATER_BG = make_background_tile(WATER_COLORS, 50, 50)
 element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
-final_sounds_played = False
 
 # PLAYER ELEMENTS #
 player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 3*2, RED_PROFILE)
 enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE)
+player_queue = list()
+enemy_queue = list()
+f = None
+
+# GAME SETTINGS #
+sounds_on = True
+auto_aim_on = False
+final_sounds_played = False
+multi_player = False
+single_player = True
 
 # SPRITE CONTAINER INITIALIZATION #
 tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
@@ -459,6 +487,88 @@ obstacles = pygame.sprite.RenderPlain()
 map_elements = pygame.sprite.RenderPlain(())
 ether = pygame.sprite.RenderPlain(())
 pixels = pygame.sprite.RenderPlain(())
+
+
+def server_thread():
+    global player_turn
+    global error_flag
+    gameon = False
+
+    try:
+        print(" Connecting to the TankBattle server... ")
+        SERVER.connect((SERVER_IP, PORT))
+        greeting = SERVER.recv(1024).decode('ascii')
+        enemy_queue.insert(0, "CONNECTED")
+        print(" " + greeting)
+
+        print(" " + "Waiting for the other player to join...")
+        greeting = SERVER.recv(1024).decode('ascii')
+
+        print(" All players have joined...")
+        if greeting.find("PLAYER 1") != -1:
+            print(" PLAYER 1 assignment")
+            enemy_queue.insert(0, "PLAYER 1")
+            player_turn = True
+        else:
+            print(" PLAYER 2 assignment ")
+            player_turn = False
+            enemy_queue.insert(0, "PLAYER 2")
+
+        gameon = True
+
+    except OSError:
+        info = "OSError: [WinError 10038] Try restarting the game..."
+        print(info)
+        error_flag = True
+    except ConnectionResetError:
+        info = "[Connection Reset Error] Try restarting the game..."
+        print(info)
+        error_flag = True
+    except ConnectionAbortedError:
+        info = "[Connection Aborted Error] Try restarting the game..."
+        print(info)
+        error_flag = True
+    except ConnectionRefusedError:
+        info = "[Connection Refused Error] Try restarting the game..."
+        print(info)
+        print(" If this continues to occur, restart the Battleship server")
+        error_flag = True
+    except KeyboardInterrupt:
+        info = "[Keyboard Interrupt] Restart the game..."
+        print(info)
+        error_flag = True
+
+    print("Starting the game...")
+    while gameon:
+
+        try:
+            comm = SERVER.recv(1024).decode('ascii')
+        except OSError:
+            break
+        if not comm:
+            info = "SORRY! Server connection lost..."
+            print(info)
+            error_flag = True
+            break
+        print("Received:", comm)
+        if comm.find("CHEAT,") != -1:
+            """
+            cheat = comm.replace("CHEAT,", "")
+            cheat_queue.insert(0, cheat)
+            """
+        elif comm.find("MOVE,") != -1:
+            move = comm.replace("MOVE,", "")
+            enemy_queue.insert(0, move)
+
+        for event in pygame.event.get(EVENT_CLOSE_SOCKET):
+            if event.type == EVENT_CLOSE_SOCKET:
+                print("THREAD: EVENT CLOSE DETECTED")
+                gameon = False
+                break
+
+    SERVER.close()
+    print("Thread FINISHED")
+    return
 
 
 def draw_info_banner():
@@ -500,7 +610,7 @@ def draw_info_banner():
                              (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10))
 
 
-def place_elements(element_map):
+def load_map(element_map):
     width = SCREEN_WIDTH // 50
     height = SCREEN_HEIGHT // 50
     for i in range(height):
@@ -519,15 +629,16 @@ def place_elements(element_map):
 def final_screen(win):
     global final_sounds_played
     if not final_sounds_played:
-        explosion_sound.play()
+        if sounds_on:
+            explosion_sound.play()
     if win:
-        if not final_sounds_played:
+        if sounds_on and not final_sounds_played:
             win_sound.play()
         temp = pygame.draw.rect(main_screen, (0, 200, 0), (0, SCREEN_HEIGHT//2-100, SCREEN_WIDTH, 200))
         temp = pygame.draw.rect(main_screen, (0, 100, 0), (0, temp.top + 25, SCREEN_WIDTH, 150))
         temp = draw_text("WINNER", main_screen, TITLE_FONT, SCREEN_WIDTH//2, temp.top - 25, COLOR_WHITE, COLOR_BLACK, "center")
     else:
-        if not final_sounds_played:
+        if sounds_on and not final_sounds_played:
             lose_sound.play()
         temp = pygame.draw.rect(main_screen, (200, 0, 0), (0, SCREEN_HEIGHT//2-100, SCREEN_WIDTH, 200))
         temp = pygame.draw.rect(main_screen, (100, 0, 0), (0, temp.top + 25, SCREEN_WIDTH, 150))
@@ -536,16 +647,15 @@ def final_screen(win):
     final_sounds_played = True
 
 
-#f = open("tankdata", "wb")
-
-
 def main():
-    global main_screen, player, enemy, game_timer
+    global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on
 
+    # GENERATE BACKGROUND #
     for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
         for j in range(math.ceil(SCREEN_HEIGHT // DIRT_BG.get_width()) + 1):
             background.blit(DIRT_BG, (i * DIRT_BG.get_width(), j * DIRT_BG.get_width()))
 
+    # PLAYER SETUP #
     pregame = True
     game_on = True
     show_controls = False
@@ -562,6 +672,12 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                 pregame = False
                 break
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
+                sounds_on = not sounds_on
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_2:
+                auto_aim_on = not auto_aim_on
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # left-click
@@ -628,17 +744,27 @@ def main():
         pixels.draw(main_screen)
 
         pygame.display.update()
-
-    # START GAME #
     tanks.empty()
     obstructions.empty()
     del player, enemy
+
+    # INITIALIZE GAME #
     player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 2, RED_PROFILE)
     enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 2, BLUE_PROFILE)
+
+    # IF MULTI-PLAYER #
+    """
+    thread = threading.Thread(target=server_thread, daemon=True)
+    thread.start()
+    """
+    # IF SINGLE PLAYER #
+
     obstructions.add(enemy.tank)
     tanks.add(enemy.get_sprites(), player.get_sprites())
-    place_elements(GAME_MAP2)
 
+    load_map(GAME_MAP2)
+
+    """
     #### FOR TESTING ONLY #####################################################################
     contents = list()
     f = open("tankdata", "rb")
@@ -652,6 +778,7 @@ def main():
     move_counter = 0
     move_size = len(contents)
     ###########################################################################################
+    """
 
     done = False
     game_over = False
@@ -670,6 +797,12 @@ def main():
             if game_over and event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 done = True
                 break
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
+                sounds_on = not sounds_on
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_2:
+                auto_aim_on = not auto_aim_on
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # left-click
@@ -701,13 +834,22 @@ def main():
 
         # ELEMENT UPDATES #
         map_elements.update()
-        player.update(pygame.mouse.get_pos())
-        #temp = player.send_data()
+        if auto_aim_on:
+            player.update(enemy.tank.pos)
+        else:
+            player.update(pygame.mouse.get_pos())
+
+        """
+        # IF USING MOVE DATA FROM FILE
         temp = contents[move_counter] ###################################
         move_counter = (move_counter + 1) % move_size ###################
         enemy.receive_data(temp)
-        enemy.update()
-        map_elements.update()
+        """
+        if single_player:
+            enemy.update(player.tank.pos)
+        if multi_player:
+            enemy.update()
+
         pixels.update()
 
         # DRAW EVERYTHING #
@@ -726,11 +868,19 @@ def main():
         # FLIP THE DISPLAY #
         pygame.display.update()
 
-    # CLEAN UP & QUIT #
+    """
+    # Kill the server thread before closing
+    print("Posting EVENT_CLOSE_SOCKET event")
     try:
-        f.close() ###########################################
-    except:
+        SERVER.shutdown(socket.SHUT_WR)
+        SERVER.close()
+    except OSError:
         pass
+    pygame.event.post(pygame.event.Event(EVENT_CLOSE_SOCKET))
+    thread.join()
+    """
+
+    # CLEAN UP & QUIT #
     pygame.quit()
 
 
