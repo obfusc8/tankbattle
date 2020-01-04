@@ -5,6 +5,8 @@ import sys
 import pygame
 import math
 import time
+
+from pygame.compat import geterror
 from pygame.math import Vector2
 import pickle
 from Tank import Tank
@@ -99,6 +101,22 @@ GAME_MAP2 = "" \
             "GGGGGGGRRRRRRRRRRRGGGGGGG" \
             "GGGGGGGGGGWWWWWGGGGGGGGGG" \
             "GGGGGGGGGGWWWWWGGGGGGGGGG"
+
+
+def load_sound(name):
+    class NoneSound:
+        def play(self):
+            pass
+
+    if not pygame.mixer or not pygame.mixer.get_init():
+        return NoneSound()
+    fullname = os.path.join(data_dir, name)
+    try:
+        sound = pygame.mixer.Sound(fullname)
+    except pygame.error:
+        print("Cannot load sound: %s" % fullname)
+        raise SystemExit(str(geterror()))
+    return sound
 
 
 def make_background_tile(colors, width=10, height=10, border=0):
@@ -274,8 +292,11 @@ class Player:
                 if self.big_shots > 0:
                     self.big_shots -= 1
                     log_shot = True
+                    gun_sound.play()
             elif size == SMALL_SHOT_SIZE:
                 if self.small_shots > 0:
+                    machine_gun_sound.stop()
+                    machine_gun_sound.play()
                     self.small_shots -= 1
                     log_shot = True
             if log_shot:
@@ -324,6 +345,11 @@ class Player:
         self.target = data["target"]
         if data["last_shot"]:
             shot = Shot(data["last_shot"], self)
+            if shot.size == BIG_SHOT_SIZE:
+                gun_sound.play()
+            if shot.size == SMALL_SHOT_SIZE:
+                machine_gun_sound.stop()
+                machine_gun_sound.play()
             self.shots.add(shot)
             shots.add(shot)
         self.health = data["health"]
@@ -355,6 +381,84 @@ class HitPixel(pygame.sprite.Sprite):
         if self.image.get_alpha() <= 0:
             self.kill()
             del self
+
+
+class Element(pygame.sprite.Sprite):
+
+    def __init__(self, image, xy):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.center = xy
+        self.pos = Vector2(xy)
+        self.health = 100
+        self.alpha = 255
+
+    def update(self, *args):
+        if self in obstructions:
+            shot = pygame.sprite.spritecollide(self, shots, False)
+            if shot:
+                for s in shot:
+                    for i in range(5):
+                        pixels.add(HitPixel(s.pos, s.size))
+                    s.kill()
+                    del s
+                    """ WILL NEED TO COMMUNICATE GAME STATE BEFORE ADDING DESTRUCTION
+                    self.health -= 1
+                    self.alpha -= 2
+                    self.image.set_alpha(self.alpha)
+                    if self.health < 0:
+                        for i in range(5):
+                            pixels.add(HitPixel(self.pos, self.image.get_width()))
+                        obstructions.remove(self)
+    """
+
+
+# GAME INITIALIZATION #
+pygame.init()
+clock = pygame.time.Clock()
+TIME_START = pygame.time.get_ticks()
+game_timer = 0
+
+# FONT SETTINGS #
+TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
+BANNER_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 52)
+TEXT_FONT_BIG = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 30)
+TEXT_FONT_MED = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 20)
+TEXT_FONT_SMALL = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 16)
+TEXT_FONT_TINY = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 12)
+
+# LOAD SOUNDS #
+gun_sound = load_sound("gun.wav")
+machine_gun_sound = load_sound("machine_gun.wav")
+explosion_sound = load_sound("explosion.wav")
+idle_sound = load_sound("idle.wav")
+win_sound = load_sound("win.wav")
+lose_sound = load_sound("lose.wav")
+
+# AREA ELEMENTS #
+main_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+DIRT_BG = make_background_tile(DIRT_COLORS, 200, 200)
+ROCK_BG = make_background_tile(ROCK_COLORS, 50, 50, 1)
+SAND_BG = make_background_tile(SAND_COLORS, 50, 50)
+GRASS_BG = make_background_tile(GRASS_COLORS, 50, 50)
+WATER_BG = make_background_tile(WATER_COLORS, 50, 50)
+element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
+final_sounds_played = False
+
+# PLAYER ELEMENTS #
+player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 3*2, RED_PROFILE)
+enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE)
+
+# SPRITE CONTAINER INITIALIZATION #
+tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
+shots = pygame.sprite.RenderPlain(())
+obstructions = pygame.sprite.RenderPlain(enemy.tank)
+obstacles = pygame.sprite.RenderPlain()
+map_elements = pygame.sprite.RenderPlain(())
+ether = pygame.sprite.RenderPlain(())
+pixels = pygame.sprite.RenderPlain(())
 
 
 def draw_info_banner():
@@ -396,75 +500,6 @@ def draw_info_banner():
                              (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10))
 
 
-# GAME INITIALIZATION #
-pygame.init()
-clock = pygame.time.Clock()
-TIME_START = pygame.time.get_ticks()
-game_timer = 0
-
-# FONT SETTINGS #
-TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
-BANNER_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 52)
-TEXT_FONT_BIG = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 30)
-TEXT_FONT_MED = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 20)
-TEXT_FONT_SMALL = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 16)
-TEXT_FONT_TINY = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 12)
-
-# AREA ELEMENTS #
-main_screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-background = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-DIRT_BG = make_background_tile(DIRT_COLORS, 200, 200)
-ROCK_BG = make_background_tile(ROCK_COLORS, 50, 50, 1)
-SAND_BG = make_background_tile(SAND_COLORS, 50, 50)
-GRASS_BG = make_background_tile(GRASS_COLORS, 50, 50)
-WATER_BG = make_background_tile(WATER_COLORS, 50, 50)
-element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
-
-# PLAYER ELEMENTS #
-player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 3*2, RED_PROFILE)
-enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE)
-
-# SPRITE CONTAINER INITIALIZATION #
-tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
-shots = pygame.sprite.RenderPlain(())
-obstructions = pygame.sprite.RenderPlain(enemy.tank)
-obstacles = pygame.sprite.RenderPlain()
-map_elements = pygame.sprite.RenderPlain(())
-ether = pygame.sprite.RenderPlain(())
-pixels = pygame.sprite.RenderPlain(())
-
-
-class Element(pygame.sprite.Sprite):
-
-    def __init__(self, image, xy):
-        pygame.sprite.Sprite.__init__(self)
-        self.image = image
-        self.rect = self.image.get_rect()
-        self.rect.center = xy
-        self.pos = Vector2(xy)
-        self.health = 100
-        self.alpha = 255
-
-    def update(self, *args):
-        if self in obstructions:
-            shot = pygame.sprite.spritecollide(self, shots, False)
-            if shot:
-                for s in shot:
-                    for i in range(5):
-                        pixels.add(HitPixel(s.pos, s.size))
-                    s.kill()
-                    del s
-                    """ WILL NEED TO COMMUNICATE GAME STATE BEFORE ADDING DESTRUCTION
-                    self.health -= 1
-                    self.alpha -= 2
-                    self.image.set_alpha(self.alpha)
-                    if self.health < 0:
-                        for i in range(5):
-                            pixels.add(HitPixel(self.pos, self.image.get_width()))
-                        obstructions.remove(self)
-    """
-
-
 def place_elements(element_map):
     width = SCREEN_WIDTH // 50
     height = SCREEN_HEIGHT // 50
@@ -482,15 +517,23 @@ def place_elements(element_map):
 
 
 def final_screen(win):
+    global final_sounds_played
+    if not final_sounds_played:
+        explosion_sound.play()
     if win:
+        if not final_sounds_played:
+            win_sound.play()
         temp = pygame.draw.rect(main_screen, (0, 200, 0), (0, SCREEN_HEIGHT//2-100, SCREEN_WIDTH, 200))
         temp = pygame.draw.rect(main_screen, (0, 100, 0), (0, temp.top + 25, SCREEN_WIDTH, 150))
         temp = draw_text("WINNER", main_screen, TITLE_FONT, SCREEN_WIDTH//2, temp.top - 25, COLOR_WHITE, COLOR_BLACK, "center")
     else:
+        if not final_sounds_played:
+            lose_sound.play()
         temp = pygame.draw.rect(main_screen, (200, 0, 0), (0, SCREEN_HEIGHT//2-100, SCREEN_WIDTH, 200))
         temp = pygame.draw.rect(main_screen, (100, 0, 0), (0, temp.top + 25, SCREEN_WIDTH, 150))
         temp = draw_text("LOSER", main_screen, TITLE_FONT, SCREEN_WIDTH//2, temp.top - 25, COLOR_WHITE, COLOR_BLACK, "center")
     temp = draw_text("Press 'Esc' to quit", main_screen, TEXT_FONT_MED, SCREEN_WIDTH // 2, temp.bottom + 25, COLOR_WHITE, COLOR_BLACK, "center")
+    final_sounds_played = True
 
 
 #f = open("tankdata", "wb")
