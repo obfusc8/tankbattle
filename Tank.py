@@ -2,7 +2,6 @@ import math
 import pygame
 from pygame.math import Vector2
 
-
 TANK_WIDTH = 40
 TANK_LENGTH = 60
 
@@ -50,7 +49,6 @@ class Tank(pygame.sprite.Sprite):
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
         self.mask = pygame.mask.from_surface(self.image)
 
-
     def _move(self):
         self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))
         self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction))
@@ -70,9 +68,21 @@ class Tank(pygame.sprite.Sprite):
     def aim_cannon(self, target):
         self.cannon.aim(target)
 
+    def face_towards(self, target):
+        x, y = target
+        x -= self.pos.x
+        y -= self.pos.y
+        angle = Vector2(0, 0).angle_to(Vector2(x, y))
+        if angle == 0:
+            pass
+        elif angle < 0:
+            angle *= -1
+        else:
+            angle = 360 - angle
+        self.direction = -int(angle)
+
     def destroy(self):
         self.dead = True
-        rect = self.rect
         pygame.draw.rect(self.orig_image, (0, 0, 0, 125), (0, 0, TANK_LENGTH, TANK_WIDTH))
         self._rotate()
         self.cannon.kill()

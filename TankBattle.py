@@ -34,7 +34,7 @@ FRAME_RATE = 60
 
 # GAME ELEMENT SETTINGS #
 TURN_SPEED = 4
-MAX_HEALTH = 1000
+MAX_HEALTH = 750
 MAX_SPEED = 0.3
 FRICTION = 0.002
 ACCELERATION = .005
@@ -259,7 +259,7 @@ class Player:
         self.parts = pygame.sprite.RenderPlain(self.tank)
         self.target = (0, 0)
         self.last_shot = 0
-        self.health = 1000
+        self.health = MAX_HEALTH
         self.big_shots = BIG_SHOT_MAX
         self.small_shots = SMALL_SHOT_MAX
         self.friction = FRICTION
@@ -287,13 +287,13 @@ class Player:
                     if e != self.tank:
                         rect = self.tank.rect
                         angle = Vector2(0, 0).angle_to(self.tank.pos - e.pos)
-                        if abs(angle) > 135:  # RIGHT SIDE
+                        if abs(angle) >= 135:  # RIGHT SIDE
                             rect.right = e.rect.left
-                        if 0 < abs(angle) < 45:  # LEFT SIDE
+                        if 0 <= abs(angle) <= 45:  # LEFT SIDE
                             rect.left = e.rect.right
                         if 45 < angle < 135:  # TOP SIDE
                             rect.top = e.rect.bottom
-                        if -135 < angle < -45:  # BOTTOM SIDE
+                        if -135 <= angle <= -45:  # BOTTOM SIDE
                             rect.bottom = e.rect.top
                         self.tank.pos = Vector2(rect.center)
                         self.tank.speed = max(0, self.tank.speed - ACCELERATION)
@@ -312,7 +312,7 @@ class Player:
                 # self.tank.speed = max(0, self.tank.speed - ACCELERATION)
 
             if pygame.sprite.spritecollide(self.tank, obstacles, False):
-                self.friction = FRICTION * 2
+                self.friction = FRICTION * 1.5
                 self.tank.speed = min(self.tank.speed, MAX_SPEED / 2)
             else:
                 self.friction = FRICTION
@@ -321,10 +321,10 @@ class Player:
             if shot and shot[0] not in self.shots:
                 for i in range(5):
                     pixels.add(HitPixel(shot[0].pos, shot[0].size))
-                if shot[0] in enemy.shots:
-                    self.take_damage(shot[0].size)
+                self.take_damage(shot[0].size)
                 shot[0].kill()
                 del shot[0]
+
         elif not self.tank.dead:
             self.tank.cannon.kill()
             self.tank.destroy()
@@ -468,12 +468,13 @@ element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
 # PLAYER ELEMENTS #
 player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 3*2, RED_PROFILE)
 enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE)
+enemy_laser_sight = None
 player_queue = list()
 enemy_queue = list()
 f = None
 
 # GAME SETTINGS #
-sounds_on = True
+sounds_on = False
 auto_aim_on = False
 final_sounds_played = False
 multi_player = False
@@ -483,6 +484,7 @@ single_player = True
 tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
 shots = pygame.sprite.RenderPlain(())
 obstructions = pygame.sprite.RenderPlain(enemy.tank)
+walls = pygame.sprite.RenderPlain(())
 obstacles = pygame.sprite.RenderPlain()
 map_elements = pygame.sprite.RenderPlain(())
 ether = pygame.sprite.RenderPlain(())
@@ -622,6 +624,7 @@ def load_map(element_map):
                 map_elements.add(element)
                 if element_map[n] == "R":
                     obstructions.add(element)
+                    walls.add(element)
                 if element_map[n] == "W":
                     obstacles.add(element)
 
@@ -647,8 +650,71 @@ def final_screen(win):
     final_sounds_played = True
 
 
+class Radar(pygame.sprite.Sprite):
+    pass
+
+
+class LaserSight(pygame.sprite.Sprite):
+
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        epos = enemy.tank.pos
+        ppos = player.tank.pos
+        self.image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+        self.rect = self.image.get_rect()
+        self.mask = pygame.mask.from_surface(self.image)
+        self.on_target = False
+
+    def update(self, *args):
+        self.image.fill((0, 0, 0, 0))
+        epos = enemy.tank.pos
+        ppos = player.tank.pos
+        if pygame.sprite.spritecollideany(self, walls, pygame.sprite.collide_mask):
+            pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+            self.on_target = False
+        else:
+            pygame.draw.line(self.image, (0, 255, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+            self.on_target = True
+        self.mask = pygame.mask.from_surface(self.image)
+
+
+def enemy_bot():
+    tank = enemy.tank
+    global enemy_laser_sight
+    if enemy_laser_sight is None:
+        enemy_laser_sight = LaserSight()
+    enemy_laser_sight.update()
+    # main_screen.blit(enemy_laser_sight.image, (0, 0))   # COMMENT TO REMOVE LINE FROM VIEW
+    if enemy_laser_sight.on_target:
+        tank.face_towards(player.tank.pos)
+        if game_timer % 10 == 0:
+            enemy.shoot(BIG_SHOT_SIZE)
+        else:
+            enemy.shoot(SMALL_SHOT_SIZE)
+    elif game_timer % 60 == 0:
+        direction = math.radians(tank.direction)
+        NW = tank.pos + 55 * Vector2(math.cos(direction-math.pi/4), math.sin(direction-math.pi/4))
+        NE = tank.pos + 55 * Vector2(math.cos(direction+math.pi/4), math.sin(direction+math.pi/4))
+        SE = tank.pos + 55 * Vector2(math.cos(direction+3*math.pi/4), math.sin(direction+3*math.pi/4))
+        SW = tank.pos + 55 * Vector2(math.cos(direction-3*math.pi/4), math.sin(direction-3*math.pi/4))
+        adjacents = [NW, NE, SE, SW]
+        for wall in walls:
+            for a in adjacents:
+                if wall.rect.collidepoint(int(a[0]), int(a[1])):
+                    adjacents.remove(a)
+                    break
+            closest = adjacents[0]
+        for a in adjacents:
+            if a.distance_to(player.tank.pos) < closest.distance_to(player.tank.pos):
+                closest = a
+        tank.face_towards(closest)
+    else:
+        enemy.go()
+
+
 def main():
-    global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on
+    global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
 
     # GENERATE BACKGROUND #
     for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
@@ -847,6 +913,7 @@ def main():
         """
         if single_player:
             enemy.update(player.tank.pos)
+            enemy_bot()
         if multi_player:
             enemy.update()
 
@@ -863,7 +930,6 @@ def main():
         shots.draw(main_screen)
         tanks.draw(main_screen)
         pixels.draw(main_screen)
-
 
         # FLIP THE DISPLAY #
         pygame.display.update()
