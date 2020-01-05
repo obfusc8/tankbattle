@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import pickle
 import socket
 import select
 import sys
@@ -43,10 +44,19 @@ def gameThread(sender, receiver):
             if not message:
                 raise PlayerError("Connection lost from player")
 
+            # ACKNOWLEDGE RECEIPT
+            print("sending acknowledge to", S)
+            sender.send("ACK".encode('ascii'))
+
             # MESSAGE SENT
             print("received:", message.decode('ascii'), "from", S)
             print("sending message to", R)
             receiver.send(message)
+
+            # GET ACKNOWLEDGEMENT
+            ack = receiver.recv(64).decode('ascii')
+            if ack != "ACK":
+                print(ack)
 
         except KeyboardInterrupt:
             print("[KeyboardInterrupt] Server was halted")

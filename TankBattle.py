@@ -558,6 +558,7 @@ def server_thread():
             cheat = comm.replace("CHEAT,", "")
             cheat_queue.insert(0, cheat)
             """
+            pass
         elif comm.find("MOVE,") != -1:
             move = comm.replace("MOVE,", "")
             enemy_queue.insert(0, move)
