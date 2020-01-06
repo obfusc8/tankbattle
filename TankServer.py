@@ -4,6 +4,7 @@ import socket
 import select
 import sys
 import threading
+import time
 
 
 class PlayerError(Exception):
@@ -44,19 +45,21 @@ def gameThread(sender, receiver):
             if not message:
                 raise PlayerError("Connection lost from player")
 
-            # ACKNOWLEDGE RECEIPT
-            print("sending acknowledge to", S)
-            sender.send("ACK".encode('ascii'))
-
             # MESSAGE SENT
-            print("received:", message.decode('ascii'), "from", S)
+            print("received: message from", S)
+            print("message:", str(message))
             print("sending message to", R)
             receiver.send(message)
+            print("message sent")
 
-            # GET ACKNOWLEDGEMENT
-            ack = receiver.recv(64).decode('ascii')
-            if ack != "ACK":
-                print(ack)
+            print("waiting for ack from receiver")
+            ack = receiver.recv(1024)
+            print("received: ack from", R)
+            print("ack:", str(ack))
+
+            print("sending ack to sender")
+            sender.send(ack)
+            print("ack sent")
 
         except KeyboardInterrupt:
             print("[KeyboardInterrupt] Server was halted")
@@ -145,7 +148,7 @@ def main():
                 players.append((player, addr))
             except KeyboardInterrupt:
                 print("[Keyboard Interrupt] Server was halted")
-                ### KILL SERVER ###
+                ### KILL SEND_SERVER ###
                 UP = False
                 try:
                     for p in players:
@@ -172,20 +175,19 @@ def main():
                     players.remove(p)
                     continue
 
+        time.sleep(.1)
         # Assign player positions and start game
         if (len(players) == 2):
-            print("2 Players connected, sending player assignments")
+            print("2 Players connected, sending acknowledgement")
             for n, p in enumerate(players):
-                assignment = "PLAYER " + str(n + 1)
+                assignment = "CONNECTED " + str(n + 1)
                 print("Sending assignment to", assignment)
                 assignment = assignment.encode('ascii')
                 p[0].send(assignment)
 
             threading.Thread(target=gameThread, args=(players[0], players[1],), daemon=True).start()
-            threading.Thread(target=gameThread, args=(players[1], players[0],), daemon=True).start()
 
-
-    ### SHUTDOWN SERVER ###
+    ### SHUTDOWN SEND_SERVER ###
     server.close()
     print("END")
 

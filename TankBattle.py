@@ -1,14 +1,11 @@
-import codecs
 import os
 import random
 import socket
 import sys
 import threading
-
+from tkinter import Tk, messagebox
 import pygame
 import math
-import time
-
 from pygame.compat import geterror
 from pygame.math import Vector2
 import pickle
@@ -393,40 +390,30 @@ class Player:
                 "speed": self.tank.speed,
                 "target": self.target,
                 "last_shot": self.last_shot,
-                "health": self.health,
-                "big_shots": self.big_shots,
-                "small_shots": self.small_shots}
+                "health": self.health}
+                #"big_shots": self.big_shots,
+                #"small_shots": self.small_shots}
         self.last_shot = 0
-        #pickle.dump(data, f)
-        return pickle.dumps(data, -1)
+        player_queue.insert(0, data)
 
     def receive_data(self, data):
-        #data = pickle.loads(data)
         self.tank.pos = data["pos"]
-        #self.tank.pos.x += 500  ########################################
         self.tank.direction = data["direction"]
         self.tank.speed = data["speed"]
         self.target = data["target"]
-        if data["last_shot"]:
-            shot = Shot(data["last_shot"], self)
-            if shot.size == BIG_SHOT_SIZE:
-                if sounds_on:
-                    gun_sound.play()
-            if shot.size == SMALL_SHOT_SIZE:
-                machine_gun_sound.stop()
-                if sounds_on:
-                    machine_gun_sound.play()
-            self.shots.add(shot)
-            shots.add(shot)
         self.health = data["health"]
-        self.big_shots = data["big_shots"]
-        self.small_shots = data["small_shots"]
+        #self.big_shots = data["big_shots"]
+        #self.small_shots = data["small_shots"]
+        if data["last_shot"]:
+            self.shoot(data["last_shot"])
 
 
 # GAME INITIALIZATION #
 pygame.init()
 clock = pygame.time.Clock()
 TIME_START = pygame.time.get_ticks()
+recv_error_flag = False
+send_error_flag = False
 game_timer = 0
 
 # NETWORKING SETUP #
@@ -436,8 +423,11 @@ else:
     # SERVER_IP = "192.168.86.38"
     SERVER_IP = "SAL-1908-KJ"
 PORT = 9998
-SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-EVENT_CLOSE_SOCKET = pygame.USEREVENT + 0
+SEND_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+RECV_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+TEMP_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+EVENT_CLOSE_SEND_SOCKET = pygame.USEREVENT + 0
+EVENT_CLOSE_RECV_SOCKET = pygame.USEREVENT + 1
 
 # FONT SETTINGS #
 TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
@@ -471,7 +461,6 @@ enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PR
 enemy_laser_sight = None
 player_queue = list()
 enemy_queue = list()
-f = None
 
 # GAME SETTINGS #
 sounds_on = False
@@ -491,86 +480,168 @@ ether = pygame.sprite.RenderPlain(())
 pixels = pygame.sprite.RenderPlain(())
 
 
-def server_thread():
-    global player_turn
-    global error_flag
-    gameon = False
+def server_lobby():
+    # server
+
+
+def send_server_thread():
+    global send_error_flag
+    send_server_connected = False
 
     try:
         print(" Connecting to the TankBattle server... ")
-        SERVER.connect((SERVER_IP, PORT))
-        greeting = SERVER.recv(1024).decode('ascii')
-        enemy_queue.insert(0, "CONNECTED")
+        SEND_SERVER.connect((SERVER_IP, PORT))
+        greeting = SEND_SERVER.recv(1024).decode('ascii')
         print(" " + greeting)
 
         print(" " + "Waiting for the other player to join...")
-        greeting = SERVER.recv(1024).decode('ascii')
+        greeting = SEND_SERVER.recv(1024).decode('ascii')
+        print(" " + greeting)
 
-        print(" All players have joined...")
-        if greeting.find("PLAYER 1") != -1:
-            print(" PLAYER 1 assignment")
-            enemy_queue.insert(0, "PLAYER 1")
-            player_turn = True
-        else:
-            print(" PLAYER 2 assignment ")
-            player_turn = False
-            enemy_queue.insert(0, "PLAYER 2")
-
-        gameon = True
+        send_server_connected = True
 
     except OSError:
         info = "OSError: [WinError 10038] Try restarting the game..."
         print(info)
-        error_flag = True
+        send_error_flag = True
     except ConnectionResetError:
         info = "[Connection Reset Error] Try restarting the game..."
         print(info)
-        error_flag = True
+        send_error_flag = True
     except ConnectionAbortedError:
         info = "[Connection Aborted Error] Try restarting the game..."
         print(info)
-        error_flag = True
+        send_error_flag = True
     except ConnectionRefusedError:
         info = "[Connection Refused Error] Try restarting the game..."
         print(info)
         print(" If this continues to occur, restart the Battleship server")
-        error_flag = True
+        send_error_flag = True
     except KeyboardInterrupt:
         info = "[Keyboard Interrupt] Restart the game..."
         print(info)
-        error_flag = True
+        send_error_flag = True
 
-    print("Starting the game...")
-    while gameon:
+    print("Starting the send server...")
+    while send_server_connected:
 
         try:
-            comm = SERVER.recv(1024).decode('ascii')
+            if len(player_queue) > 0:
+
+                # SEND DATA
+                print("sending", str(player_queue[-1]))
+                data = pickle.dumps(player_queue.pop(-1), -1)
+                SEND_SERVER.send(data)
+
+                # WAIT FOR ACKNOWLEDGEMENT
+                print("waiting for ACK")
+                ack = SEND_SERVER.recv(64).decode('ascii')
+                if not ack:
+                    info = "SORRY! Server connection lost..."
+                    print(info)
+                    send_error_flag = True
+                    break
+                if ack != "ACK":
+                    print(ack)
+                print("ACK received")
+
         except OSError:
             break
-        if not comm:
-            info = "SORRY! Server connection lost..."
-            print(info)
-            error_flag = True
-            break
-        print("Received:", comm)
-        if comm.find("CHEAT,") != -1:
-            """
-            cheat = comm.replace("CHEAT,", "")
-            cheat_queue.insert(0, cheat)
-            """
-            pass
-        elif comm.find("MOVE,") != -1:
-            move = comm.replace("MOVE,", "")
-            enemy_queue.insert(0, move)
 
-        for event in pygame.event.get(EVENT_CLOSE_SOCKET):
-            if event.type == EVENT_CLOSE_SOCKET:
+        for event in pygame.event.get(EVENT_CLOSE_SEND_SOCKET):
+            if event.type == EVENT_CLOSE_SEND_SOCKET:
                 print("THREAD: EVENT CLOSE DETECTED")
-                gameon = False
+                send_server_connected = False
                 break
 
-    SERVER.close()
-    print("Thread FINISHED")
+    SEND_SERVER.close()
+    print("SEND_SERVER Thread FINISHED")
+    return
+
+
+def recv_server_thread():
+    global recv_error_flag
+    recv_server_connected = False
+
+    try:
+        print(" Connecting to the TankBattle server... ")
+        RECV_SERVER.connect((SERVER_IP, PORT))
+        greeting = RECV_SERVER.recv(1024).decode('ascii')
+        print(" " + greeting)
+
+        print(" " + "Waiting for the other player to join...")
+        greeting = RECV_SERVER.recv(1024).decode('ascii')
+        print(" " + greeting)
+
+        recv_server_connected = True
+
+    except OSError:
+        info = "OSError: [WinError 10038] Try restarting the game..."
+        print(info)
+        recv_error_flag = True
+    except ConnectionResetError:
+        info = "[Connection Reset Error] Try restarting the game..."
+        print(info)
+        recv_error_flag = True
+    except ConnectionAbortedError:
+        info = "[Connection Aborted Error] Try restarting the game..."
+        print(info)
+        recv_error_flag = True
+    except ConnectionRefusedError:
+        info = "[Connection Refused Error] Try restarting the game..."
+        print(info)
+        print(" If this continues to occur, restart the Battleship server")
+        recv_error_flag = True
+    except KeyboardInterrupt:
+        info = "[Keyboard Interrupt] Restart the game..."
+        print(info)
+        recv_error_flag = True
+
+    print("Starting the receive server")
+    while recv_server_connected:
+
+        try:
+
+            # RECEIVE DATA
+            print("waiting for data")
+            pickled_data = RECV_SERVER.recv(1024)
+            print("received data")
+
+            if not pickled_data:
+                info = "SORRY! Server connection lost..."
+                print(info)
+                recv_error_flag = True
+                break
+
+            try:
+                data = pickle.loads(pickled_data)
+                # SEND ACKNOWLEDGEMENT
+                print("sending ack")
+                RECV_SERVER.send("ACK".encode('ascii'))
+                enemy_queue.insert(0, data)
+                if len(enemy_queue) > 5:
+                    enemy_queue.pop(-1)
+
+            except pickle.UnpicklingError as info:
+                print("UnpicklingError:", info.args)
+                RECV_SERVER.send("BAD: UnpicklingError".encode('ascii'))
+                continue
+            except KeyError as info:
+                print("KeyError:", info.args)
+                RECV_SERVER.send("BAD: KeyError".encode('ascii'))
+                continue
+
+        except OSError:
+            break
+
+        for event in pygame.event.get(EVENT_CLOSE_RECV_SOCKET):
+            if event.type == EVENT_CLOSE_RECV_SOCKET:
+                print("THREAD: EVENT CLOSE DETECTED")
+                recv_server_connected = False
+                break
+
+    RECV_SERVER.close()
+    print("RECV SERVER Thread FINISHED")
     return
 
 
@@ -651,10 +722,6 @@ def final_screen(win):
     final_sounds_played = True
 
 
-class Radar(pygame.sprite.Sprite):
-    pass
-
-
 class LaserSight(pygame.sprite.Sprite):
 
     def __init__(self):
@@ -716,6 +783,7 @@ def enemy_bot():
 
 def main():
     global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
+    global single_player, multi_player
 
     # GENERATE BACKGROUND #
     for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
@@ -739,6 +807,18 @@ def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                 pregame = False
                 break
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_9:
+                send_thread = threading.Thread(target=send_server_thread, daemon=True)
+                send_thread.start()
+                multi_player = True
+                single_player = False
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_0:
+                recv_thread = threading.Thread(target=recv_server_thread, daemon=True)
+                recv_thread.start()
+                multi_player = True
+                single_player = False
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
                 sounds_on = not sounds_on
@@ -811,7 +891,9 @@ def main():
         pixels.draw(main_screen)
 
         pygame.display.update()
+    shots.empty()
     tanks.empty()
+    pixels.empty()
     obstructions.empty()
     del player, enemy
 
@@ -819,36 +901,14 @@ def main():
     player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 2, RED_PROFILE)
     enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 2, BLUE_PROFILE)
 
-    # IF MULTI-PLAYER #
-    """
-    thread = threading.Thread(target=server_thread, daemon=True)
-    thread.start()
-    """
-    # IF SINGLE PLAYER #
-
     obstructions.add(enemy.tank)
     tanks.add(enemy.get_sprites(), player.get_sprites())
 
     load_map(GAME_MAP2)
 
-    """
-    #### FOR TESTING ONLY #####################################################################
-    contents = list()
-    f = open("tankdata", "rb")
-    while True:
-        try:
-            contents.append(pickle.load(f))
-            contents[-1]["pos"].x += 500
-        except EOFError:
-            f.close()
-            break
-    move_counter = 0
-    move_size = len(contents)
-    ###########################################################################################
-    """
-
     done = False
     game_over = False
+    connected = False #######################################################
     while not done and game_on:
         # GAME CLOCK #
         clock.tick(FRAME_RATE)
@@ -865,6 +925,9 @@ def main():
                 done = True
                 break
 
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_0:
+                connected = True    ###########################################################
+
             if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
                 sounds_on = not sounds_on
 
@@ -878,6 +941,11 @@ def main():
                     pass
                 if event.button == 3:  # middle-click
                     pass
+
+        # IF SOMETHING GOES WRONG WITH SERVER THREADS
+        if send_error_flag or recv_error_flag and not game_over:
+            Tk().wm_withdraw()  # to hide the main window
+            messagebox.showerror('Server Error', 'The enemy has left the game!')
 
         # PLAYER MOVEMENT #
         " TANK MOVEMENT "
@@ -905,19 +973,16 @@ def main():
             player.update(enemy.tank.pos)
         else:
             player.update(pygame.mouse.get_pos())
-
-        """
-        # IF USING MOVE DATA FROM FILE
-        temp = contents[move_counter] ###################################
-        move_counter = (move_counter + 1) % move_size ###################
-        enemy.receive_data(temp)
-        """
+        # IF SINGLE PLAYER
         if single_player:
             enemy.update(player.tank.pos)
             enemy_bot()
-        if multi_player:
-            enemy.update()
-
+        # IF MUTLIPLAYER
+        if multi_player and connected:
+            player.send_data()
+            for i in range(len(enemy_queue)):
+                enemy.receive_data(enemy_queue.pop(-1))
+                enemy.update()
         pixels.update()
 
         # DRAW EVERYTHING #
@@ -935,27 +1000,30 @@ def main():
         # FLIP THE DISPLAY #
         pygame.display.update()
 
-    """
-    # Kill the server thread before closing
-    print("Posting EVENT_CLOSE_SOCKET event")
-    try:
-        SERVER.shutdown(socket.SHUT_WR)
-        SERVER.close()
-    except OSError:
-        pass
-    pygame.event.post(pygame.event.Event(EVENT_CLOSE_SOCKET))
-    thread.join()
-    """
-
     # CLEAN UP & QUIT #
+    if multi_player:
+        print("Closing server sockets...")
+        try:
+            SEND_SERVER.shutdown(socket.SHUT_WR)
+            SEND_SERVER.close()
+        except OSError:
+            pass
+        try:
+            RECV_SERVER.shutdown(socket.SHUT_WR)
+            RECV_SERVER.close()
+        except OSError:
+            pass
+        pygame.event.post(pygame.event.Event(EVENT_CLOSE_SEND_SOCKET))
+        pygame.event.post(pygame.event.Event(EVENT_CLOSE_RECV_SOCKET))
+        print("Killing SEND_SERVER thread...")
+        send_thread.join()
+        print("Killing RECV_SERVER thread...")
+        recv_thread.join()
+
     pygame.quit()
 
 
 # START #
 if __name__ == "__main__":
     main()
-    try:
-        f.close() ###########################################
-    except:
-        pass
     print("GAME OVER")
