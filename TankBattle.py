@@ -28,21 +28,21 @@ data_dir = os.path.join(main_dir, "data")
 # DISPLAY SETTINGS #
 SCREEN_WIDTH = 1250
 SCREEN_HEIGHT = 750
-FRAME_RATE = 60
+FRAME_RATE = 30
 
 # GAME ELEMENT SETTINGS #
-TURN_SPEED = 4
+TURN_SPEED = 8
 MAX_HEALTH = 750
-MAX_SPEED = 0.3
-FRICTION = 0.002
-ACCELERATION = .005
+MAX_SPEED = .6
+FRICTION = 0.01
+ACCELERATION = .02
 BIG_SHOT_SIZE = 10
 BIG_SHOT_MAX = 5
-BIG_SHOT_SPEED = 10
+BIG_SHOT_SPEED = 20
 BIG_SHOT_DAMAGE = 10
 SMALL_SHOT_SIZE = 4
 SMALL_SHOT_MAX = 100
-SMALL_SHOT_SPEED = 15
+SMALL_SHOT_SPEED = 30
 SMALL_SHOT_DAMAGE = 1
 
 # COLOR SETTINGS #
@@ -265,9 +265,9 @@ class Player:
     def update(self, target=None):
         self.shots.update()
         if self.health > 0:
-            if game_timer % 60 == 0:
+            if game_timer % FRAME_RATE == 0:
                 self.big_shots = min(self.big_shots + 1, BIG_SHOT_MAX)
-            if game_timer % 20 == 0:
+            if game_timer % FRAME_RATE//4 == 0:
                 self.small_shots = min(self.small_shots + 1, SMALL_SHOT_MAX)
             if target:
                 self.target = target
@@ -461,6 +461,8 @@ enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PR
 enemy_laser_sight = None
 player_queue = list()
 enemy_queue = list()
+send_thread = None
+recv_thread = None
 
 # GAME SETTINGS #
 sounds_on = False
@@ -482,7 +484,7 @@ pixels = pygame.sprite.RenderPlain(())
 
 
 def make_server_connections():
-    global SEND_SERVER, RECV_SERVER, recv_error_flag, start_on_left
+    global SEND_SERVER, RECV_SERVER, recv_error_flag, start_on_left, send_thread, recv_thread
 
     send_server_connected = False
     recv_server_connected = False
@@ -743,11 +745,12 @@ def enemy_bot():
     # main_screen.blit(enemy_laser_sight.image, (0, 0))   # COMMENT TO REMOVE LINE FROM VIEW
     if enemy_laser_sight.on_target:
         tank.face_towards(player.tank.pos)
-        if game_timer % 10 == 0:
-            enemy.shoot(BIG_SHOT_SIZE)
-        else:
-            enemy.shoot(SMALL_SHOT_SIZE)
-    elif game_timer % 60 == 0:
+        if not player.is_dead():
+            if game_timer % 10 == 0:
+                enemy.shoot(BIG_SHOT_SIZE)
+            else:
+                enemy.shoot(SMALL_SHOT_SIZE)
+    elif game_timer % FRAME_RATE == 0:
         direction = math.radians(tank.direction)
         NW = tank.pos + 55 * Vector2(math.cos(direction-math.pi/4), math.sin(direction-math.pi/4))
         NE = tank.pos + 55 * Vector2(math.cos(direction+math.pi/4), math.sin(direction+math.pi/4))
@@ -771,6 +774,7 @@ def enemy_bot():
 def main():
     global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
     global single_player, multi_player, send_error_flag, recv_error_flag, start_on_left
+    global send_thread, recv_thread
 
     # GENERATE BACKGROUND #
     for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
@@ -783,7 +787,7 @@ def main():
     show_controls = False
     show_start = False
     hide_button = pygame.Rect((0, 0, 0, 0))
-    count_down = 239
+    count_down = 4 * FRAME_RATE - 1
     server_started = False
     while pregame:
         clock.tick(FRAME_RATE)
@@ -853,15 +857,15 @@ def main():
         temp = draw_text("TANK BATTLE", main_screen, TITLE_FONT, SCREEN_WIDTH // 2, SCREEN_HEIGHT//6, COLOR_WHITE, COLOR_BLACK, "center")
         if single_player:
             temp = draw_text("Single player game starting...", main_screen, TEXT_FONT_BIG, SCREEN_WIDTH // 2, temp.bottom+25, COLOR_WHITE, COLOR_BLACK, "center")
-            temp = draw_text(str(max(0, count_down//60)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
+            temp = draw_text(str(max(0, count_down//FRAME_RATE)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
             count_down -= 1
         if multi_player:
             temp = draw_text("Multi-player game starting...", main_screen, TEXT_FONT_BIG, SCREEN_WIDTH // 2, temp.bottom+25, COLOR_WHITE, COLOR_BLACK, "center")
             if server_started:
-                temp = draw_text(str(max(0, count_down//60)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
+                temp = draw_text(str(max(0, count_down//FRAME_RATE)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
                 count_down -= 1
 
-        if count_down // 60 == 0:
+        if count_down // FRAME_RATE == 0:
             pregame = False
 
         if not show_controls:
