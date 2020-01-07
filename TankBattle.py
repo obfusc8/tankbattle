@@ -577,6 +577,7 @@ class Player:
 pygame.init()
 clock = pygame.time.Clock()
 TIME_START = pygame.time.get_ticks()
+server_started = False
 recv_error_flag = False
 send_error_flag = False
 server_error_flag = False
@@ -591,8 +592,9 @@ else:
 PORT = 9998
 SEND_SERVER = None
 RECV_SERVER = None
-EVENT_CLOSE_SEND_SOCKET = pygame.USEREVENT + 0
-EVENT_CLOSE_RECV_SOCKET = pygame.USEREVENT + 1
+EVENT_SERVER_SETUP_ERROR = pygame.USEREVENT + 0
+EVENT_CLOSE_SEND_SOCKET = pygame.USEREVENT + 1
+EVENT_CLOSE_RECV_SOCKET = pygame.USEREVENT + 2
 
 # FONT SETTINGS #
 TITLE_FONT = pygame.font.Font(os.path.join(data_dir, "freesansbold.ttf"), 160)
@@ -650,7 +652,7 @@ pixels = pygame.sprite.RenderPlain(())
 
 
 def make_server_connections():
-    global SEND_SERVER, RECV_SERVER, recv_error_flag, start_on_left, send_thread, recv_thread, server_error_flag
+    global SEND_SERVER, RECV_SERVER, recv_error_flag, start_on_left, send_thread, recv_thread, server_error_flag, server_started
 
     send_server_connected = False
     recv_server_connected = False
@@ -684,34 +686,13 @@ def make_server_connections():
                 recv_thread.start()
                 recv_server_connected = True
 
-    except OSError:
-        info = "OSError: [WinError 10038] Try restarting the game..."
-        print(info)
-        server_error_flag = True
-        return False
-    except ConnectionResetError:
-        info = "[Connection Reset Error] Try restarting the game..."
-        print(info)
-        server_error_flag = True
-        return False
-    except ConnectionAbortedError:
-        info = "[Connection Aborted Error] Try restarting the game..."
-        print(info)
-        server_error_flag = True
-        return False
-    except ConnectionRefusedError:
-        info = "[Connection Refused Error] Try restarting the game..."
-        print(info)
-        print(" If this continues to occur, restart the Battleship server")
-        server_error_flag = True
-        return False
-    except KeyboardInterrupt:
-        info = "[Keyboard Interrupt] Restart the game..."
-        print(info)
-        server_error_flag = True
-        return False
+        # SUCCESS
+        server_started = True
 
-    return True
+    except (OSError, ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError, KeyboardInterrupt) as error:
+        print(error)
+        server_error_flag = True
+        pygame.event.post(pygame.event.Event(EVENT_SERVER_SETUP_ERROR))
 
 
 def send_server_thread():
@@ -919,7 +900,7 @@ def enemy_bot():
 
 
 def setup_game():
-    global sounds_on, auto_aim_on, start_on_left, single_player, multi_player, game_on, player, enemy
+    global sounds_on, auto_aim_on, start_on_left, single_player, multi_player, game_on, player, enemy, server_started
     # PLAYER SETUP #
     pregame = True
     show_controls = False
@@ -930,24 +911,17 @@ def setup_game():
     while pregame:
         clock.tick(FRAME_RATE)
 
-        if multi_player and not server_started:
-            success = make_server_connections()
-            if not success:
-                # SERVER ERROR
-                Tk().wm_withdraw()  # to hide the main window
-                messagebox.showerror('Server Error', 'Server not available, try again.')
-                multi_player = False
-                count_down = 4 * FRAME_RATE - 1
-                server_started = False
-            else:
-                server_started = True
-
         for event in pygame.event.get():
 
             if event.type == pygame.QUIT:
                 game_on = False
                 pregame = False
                 break
+
+            if event.type == EVENT_SERVER_SETUP_ERROR:
+                multi_player = False
+                Tk().wm_withdraw()  # to hide the main window
+                messagebox.showerror('Server Error', 'Server not available, try again.')
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                 pregame = False
@@ -969,6 +943,7 @@ def setup_game():
                     elif multi_button.collidepoint(x, y):
                         if not (single_player or multi_player):
                             multi_player = True
+                            threading.Thread(target=make_server_connections, daemon=True).start()
                     elif controls_box.collidepoint(x, y):
                         show_controls = not show_controls
                     elif start_box.collidepoint(x, y):
@@ -1148,6 +1123,7 @@ def main():
         if not game_over and (send_error_flag or recv_error_flag):
             Tk().wm_withdraw()  # to hide the main window
             messagebox.showerror('Server Error', 'The enemy has left the game!')
+            multi_player = False
             send_error_flag = False
             recv_error_flag = False
 
@@ -1182,11 +1158,13 @@ def main():
             enemy.update(player.tank.pos)
             enemy_bot()
         # IF MUTLIPLAYER
-        if multi_player:
+        elif multi_player:
             player.send_data()
             for i in range(len(enemy_queue)):
                 enemy.receive_data(enemy_queue.pop(-1))
                 enemy.update()
+        else:
+            enemy.update()
         pixels.update()
 
         # DRAW EVERYTHING #
@@ -1224,9 +1202,15 @@ def main():
         pygame.event.post(pygame.event.Event(EVENT_CLOSE_SEND_SOCKET))
         pygame.event.post(pygame.event.Event(EVENT_CLOSE_RECV_SOCKET))
         print("Killing SEND_SERVER thread...")
-        send_thread.join()
+        try:
+            send_thread.join()
+        except AttributeError:
+            pass
         print("Killing RECV_SERVER thread...")
-        recv_thread.join()
+        try:
+            recv_thread.join()
+        except AttributeError:
+            pass
 
     pygame.quit()
 
