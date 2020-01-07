@@ -522,7 +522,7 @@ class Player:
                     self.small_shots -= 1
                     log_shot = True
                     self.last_small_shot = size
-            if log_shot or self.is_enemy:
+            if log_shot or (self.is_enemy and multi_player):
                 shot = Shot(size, self)
                 self.shots.add(shot)
                 shots.add(shot)
