@@ -167,10 +167,12 @@ class Tank(pygame.sprite.Sprite):
         self.pos = Vector2(xpos, ypos)
         self.cannon = Cannon(self.pos, color)
         self.color_light = color["light"]
+        self.color_medium = color["medium"]
         self.color_dark = color["dark"]
         self.image = pygame.Surface((TANK_LENGTH, TANK_WIDTH), pygame.SRCALPHA)
         pygame.draw.rect(self.image, self.color_light, (0, 0, TANK_LENGTH, TANK_WIDTH))
         pygame.draw.rect(self.image, self.color_dark, (0, 0, TANK_LENGTH, TANK_WIDTH), 1)
+        pygame.draw.rect(self.image, self.color_medium, (TANK_LENGTH - 5, 10, 5, TANK_WIDTH - 20))
         pygame.draw.rect(self.image, self.color_dark, (TANK_LENGTH - 5, 10, 5, TANK_WIDTH - 20), 1)
         pygame.draw.polygon(self.image, self.color_dark,
                             [(0, 8),
@@ -180,6 +182,8 @@ class Tank(pygame.sprite.Sprite):
         for i in range(-1, (TANK_LENGTH // 5 + 1)):
             pygame.draw.rect(self.image, self.color_dark, (i * 5, 0, 5, 8), 1)
             pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
+        #pygame.draw.rect(self.image, self.color_dark+(0,), (TANK_LENGTH-5, 0, 5, 8))
+        #pygame.draw.rect(self.image, self.color_dark+(0,), (TANK_LENGTH-5, TANK_WIDTH - 8, 5, 8))
         self.orig_image = self.image
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
         self.mask = pygame.mask.from_surface(self.image)
@@ -215,6 +219,8 @@ class Tank(pygame.sprite.Sprite):
         for i in range(-1, (TANK_LENGTH // 5) + 1):
             pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), 0, 5, 8), 1)
             pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), TANK_WIDTH - 8, 5, 8), 1)
+        #pygame.draw.rect(self.orig_image, self.color_dark + (0,), (TANK_LENGTH - 5, 0, 5, 8))
+        #pygame.draw.rect(self.orig_image, self.color_dark+(0,), (TANK_LENGTH-5, TANK_WIDTH - 8, 5, 8))
 
     def turn(self, a):
         self.direction = (self.direction + a) % 360
