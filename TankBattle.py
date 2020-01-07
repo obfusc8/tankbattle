@@ -10,7 +10,6 @@ import math
 from pygame.compat import geterror
 from pygame.math import Vector2
 import pickle
-from Tank import Tank
 
 # GET SYSTEM ARGUMENTS #
 if len(sys.argv) > 1:
@@ -18,8 +17,10 @@ if len(sys.argv) > 1:
     pass
 
 # FILE SETTINGS #
+"""
 if getattr(sys, 'frozen', False):
     os.chdir(sys._MEIPASS)
+"""
 if getattr(sys, 'frozen', False):
     os.chdir(os.path.dirname(sys.executable))
 main_dir = os.path.split(os.path.abspath(__file__))[0]
@@ -31,6 +32,8 @@ SCREEN_HEIGHT = 750
 FRAME_RATE = 30
 
 # GAME ELEMENT SETTINGS #
+TANK_WIDTH = 40
+TANK_LENGTH = 60
 TURN_SPEED = 8
 MAX_HEALTH = 750
 MAX_SPEED = .6
@@ -157,6 +160,134 @@ def make_background_tile(colors, width=10, height=10, border=0):
     return image
 
 
+class Tank(pygame.sprite.Sprite):
+
+    def __init__(self, xpos, ypos, color):
+        pygame.sprite.Sprite.__init__(self)
+        self.pos = Vector2(xpos, ypos)
+        self.cannon = Cannon(self.pos, color)
+        self.color_light = color["light"]
+        self.color_dark = color["dark"]
+        self.image = pygame.Surface((TANK_LENGTH, TANK_WIDTH), pygame.SRCALPHA)
+        pygame.draw.rect(self.image, self.color_light, (0, 0, TANK_LENGTH, TANK_WIDTH))
+        pygame.draw.rect(self.image, self.color_dark, (0, 0, TANK_LENGTH, TANK_WIDTH), 1)
+        pygame.draw.rect(self.image, self.color_dark, (TANK_LENGTH - 5, 10, 5, TANK_WIDTH - 20), 1)
+        pygame.draw.polygon(self.image, self.color_dark,
+                            [(0, 8),
+                             (0, TANK_WIDTH - 8),
+                             (20, TANK_WIDTH // 2 + 8),
+                             (20, TANK_WIDTH // 2 - 8)], 1)
+        for i in range(-1, (TANK_LENGTH // 5 + 1)):
+            pygame.draw.rect(self.image, self.color_dark, (i * 5, 0, 5, 8), 1)
+            pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
+        self.orig_image = self.image
+        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+        self.mask = pygame.mask.from_surface(self.image)
+        self.direction = 0
+        self.speed = 0
+        self.track = 0
+        self.aim = self.cannon.angle
+        self.dead = False
+
+    def update(self, *args):
+        if not self.dead:
+            if self.speed != 0:
+                self._move_tracks()
+            self._rotate()
+            self._move()
+            self.cannon.update(self.pos)
+            self.aim = self.cannon.angle
+
+    def _rotate(self):
+        self.image = pygame.transform.rotozoom(self.orig_image, -self.direction, 1)
+        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+        self.mask = pygame.mask.from_surface(self.image)
+
+    def _move(self):
+        self.pos.x += self.speed * 10 * math.cos(math.radians(self.direction))
+        self.pos.y += self.speed * 10 * math.sin(math.radians(self.direction))
+        self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
+
+    def _move_tracks(self):
+        self.track = (self.track + self.speed * 10) % 5
+        pygame.draw.rect(self.orig_image, self.color_light, (0, 0, TANK_LENGTH, 8))
+        pygame.draw.rect(self.orig_image, self.color_light, (0, TANK_WIDTH - 8, TANK_LENGTH, 8))
+        for i in range(-1, (TANK_LENGTH // 5) + 1):
+            pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), 0, 5, 8), 1)
+            pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), TANK_WIDTH - 8, 5, 8), 1)
+
+    def turn(self, a):
+        self.direction = (self.direction + a) % 360
+
+    def aim_cannon(self, target):
+        self.cannon.aim(target)
+
+    def face_towards(self, target):
+        x, y = target
+        x -= self.pos.x
+        y -= self.pos.y
+        angle = Vector2(0, 0).angle_to(Vector2(x, y))
+        if angle == 0:
+            pass
+        elif angle < 0:
+            angle *= -1
+        else:
+            angle = 360 - angle
+        self.direction = -int(angle)
+
+    def destroy(self):
+        self.dead = True
+        pygame.draw.rect(self.orig_image, (0, 0, 0, 125), (0, 0, TANK_LENGTH, TANK_WIDTH))
+        self._rotate()
+        self.cannon.kill()
+
+
+class Cannon(pygame.sprite.Sprite):
+
+    def __init__(self, tank_pos, color):
+        self.color_medium = color["medium"]
+        self.color_dark = color["dark"]
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.Surface((80, 20), pygame.SRCALPHA)
+        pygame.draw.rect(self.image, self.color_medium, (30, 7, 50, 6))
+        pygame.draw.rect(self.image, self.color_dark, (30, 7, 50, 6), 1)
+        pygame.draw.rect(self.image, self.color_medium, (20, 0, 30, 20))
+        pygame.draw.rect(self.image, self.color_dark, (20, 0, 30, 20), 1)
+        pygame.draw.rect(self.image, self.color_medium, (70, 5, 10, 10))
+        pygame.draw.rect(self.image, self.color_dark, (70, 5, 10, 10), 1)
+        pygame.draw.circle(self.image, self.color_dark, (40, 10), 7, 1)
+        self.orig_image = self.image
+        self.rect = self.image.get_rect(center=(int(tank_pos.x), int(tank_pos.y)))
+        self.pos = tank_pos
+        self.offset = Vector2(0, 0)
+        self.angle = 0
+        self.x = 0
+        self.y = 0
+
+    def update(self, *args):
+        if len(args) != 0:
+            self.pos = args[0]
+        self._rotate()
+
+    def _rotate(self):
+        self.image = pygame.transform.rotozoom(self.orig_image, self.angle, 1)
+        offset_rotated = self.offset.rotate(math.radians(self.angle)) + self.pos
+        self.rect = self.image.get_rect(center=(int(offset_rotated.x), int(offset_rotated.y)))
+
+    def aim(self, target):
+        self.x, self.y = target
+        self.x -= self.pos.x
+        self.y -= self.pos.y
+        angle = Vector2(0, 0).angle_to(Vector2(self.x, self.y))
+        if angle == 0:
+            pass
+        elif angle < 0:
+            angle *= -1
+        else:
+            angle = 360 - angle
+        self.angle = int(angle)
+
+
 class Shot(pygame.sprite.Sprite):
 
     def __init__(self, size, p):
@@ -169,7 +300,6 @@ class Shot(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.mask = pygame.mask.from_surface(self.image)
         self.pos = p.tank.pos
-        self.size = size  ################### DELETE
         if size == BIG_SHOT_SIZE:
             speed = BIG_SHOT_SPEED
         elif size == SMALL_SHOT_SIZE:
@@ -179,6 +309,7 @@ class Shot(pygame.sprite.Sprite):
         self.rect.centery = int(p.tank.cannon.pos.y + math.sin(aim) * 30)
         self.xv = int(speed * math.cos(aim) + p.tank.speed * math.cos(p.tank.direction))
         self.yv = int(speed * math.sin(aim) + p.tank.speed * math.sin(p.tank.direction))
+        self.size = size
 
     def update(self, *args):
         if main_screen.get_rect().contains(self):
@@ -248,19 +379,46 @@ class Element(pygame.sprite.Sprite):
     """
 
 
+class LaserSight(pygame.sprite.Sprite):
+
+    def __init__(self):
+        pygame.sprite.Sprite.__init__(self)
+        epos = enemy.tank.pos
+        ppos = player.tank.pos
+        self.image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+        self.rect = self.image.get_rect()
+        self.mask = pygame.mask.from_surface(self.image)
+        self.on_target = False
+
+    def update(self, *args):
+        self.image.fill((0, 0, 0, 0))
+        epos = enemy.tank.pos
+        ppos = player.tank.pos
+        if pygame.sprite.spritecollideany(self, walls, pygame.sprite.collide_mask):
+            pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+            self.on_target = False
+        else:
+            pygame.draw.line(self.image, (0, 255, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
+            self.on_target = True
+        self.mask = pygame.mask.from_surface(self.image)
+
+
 class Player:
 
-    def __init__(self, xpos, ypos, color):
+    def __init__(self, xpos, ypos, color, is_enemy=False):
         self.color = color
         self.tank = Tank(xpos, ypos, self.color)
         self.shots = pygame.sprite.RenderPlain(())
         self.parts = pygame.sprite.RenderPlain(self.tank)
         self.target = (0, 0)
-        self.last_shot = 0
+        self.last_small_shot = 0
+        self.last_big_shot = 0
         self.health = MAX_HEALTH
         self.big_shots = BIG_SHOT_MAX
         self.small_shots = SMALL_SHOT_MAX
         self.friction = FRICTION
+        self.is_enemy = is_enemy
 
     def update(self, target=None):
         self.shots.update()
@@ -319,7 +477,8 @@ class Player:
             if shot and shot[0] not in self.shots:
                 for i in range(5):
                     pixels.add(HitPixel(shot[0].pos, shot[0].size))
-                self.take_damage(shot[0].size)
+                if not (self.is_enemy and multi_player):
+                    self.take_damage(shot[0].size)
                 shot[0].kill()
                 del shot[0]
 
@@ -354,6 +513,7 @@ class Player:
                     log_shot = True
                     if sounds_on:
                         gun_sound.play()
+                    self.last_big_shot = size
             elif size == SMALL_SHOT_SIZE:
                 if self.small_shots > 0:
                     machine_gun_sound.stop()
@@ -361,11 +521,11 @@ class Player:
                         machine_gun_sound.play()
                     self.small_shots -= 1
                     log_shot = True
-            if log_shot:
+                    self.last_small_shot = size
+            if log_shot or self.is_enemy:
                 shot = Shot(size, self)
                 self.shots.add(shot)
                 shots.add(shot)
-                self.last_shot = shot.size
 
     def take_damage(self, size):
         if size == BIG_SHOT_SIZE:
@@ -390,11 +550,11 @@ class Player:
                 "direction": self.tank.direction,
                 "speed": self.tank.speed,
                 "target": self.target,
-                "last_shot": self.last_shot,
+                "last_big_shot": self.last_big_shot,
+                "last_small_shot": self.last_small_shot,
                 "health": self.health}
-                #"big_shots": self.big_shots,
-                #"small_shots": self.small_shots}
-        self.last_shot = 0
+        self.last_big_shot = 0
+        self.last_small_shot = 0
         player_queue.insert(0, data)
 
     def receive_data(self, data):
@@ -403,10 +563,10 @@ class Player:
         self.tank.speed = data["speed"]
         self.target = data["target"]
         self.health = data["health"]
-        #self.big_shots = data["big_shots"]
-        #self.small_shots = data["small_shots"]
-        if data["last_shot"]:
-            self.shoot(data["last_shot"])
+        if data["last_big_shot"]:
+            self.shoot(data["last_big_shot"])
+        if data["last_small_shot"]:
+            self.shoot(data["last_small_shot"])
 
 
 # GAME INITIALIZATION #
@@ -457,7 +617,7 @@ element_key = {"R": ROCK_BG, "S": SAND_BG, "G": GRASS_BG, "W": WATER_BG}
 
 # PLAYER ELEMENTS #
 player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 3*2, RED_PROFILE)
-enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE)
+enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 3*2, BLUE_PROFILE, True)
 enemy_laser_sight = None
 player_queue = list()
 enemy_queue = list()
@@ -471,6 +631,7 @@ final_sounds_played = False
 multi_player = False
 single_player = False
 start_on_left = False
+game_on = True
 
 # SPRITE CONTAINER INITIALIZATION #
 tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
@@ -711,31 +872,6 @@ def final_screen(win):
     final_sounds_played = True
 
 
-class LaserSight(pygame.sprite.Sprite):
-
-    def __init__(self):
-        pygame.sprite.Sprite.__init__(self)
-        epos = enemy.tank.pos
-        ppos = player.tank.pos
-        self.image = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
-        self.rect = self.image.get_rect()
-        self.mask = pygame.mask.from_surface(self.image)
-        self.on_target = False
-
-    def update(self, *args):
-        self.image.fill((0, 0, 0, 0))
-        epos = enemy.tank.pos
-        ppos = player.tank.pos
-        if pygame.sprite.spritecollideany(self, walls, pygame.sprite.collide_mask):
-            pygame.draw.line(self.image, (255, 0, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
-            self.on_target = False
-        else:
-            pygame.draw.line(self.image, (0, 255, 0), (int(epos.x), int(epos.y)), (int(ppos.x), int(ppos.y)))
-            self.on_target = True
-        self.mask = pygame.mask.from_surface(self.image)
-
-
 def enemy_bot():
     tank = enemy.tank
     global enemy_laser_sight
@@ -771,19 +907,10 @@ def enemy_bot():
         enemy.go()
 
 
-def main():
-    global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
-    global single_player, multi_player, send_error_flag, recv_error_flag, start_on_left
-    global send_thread, recv_thread
-
-    # GENERATE BACKGROUND #
-    for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
-        for j in range(math.ceil(SCREEN_HEIGHT // DIRT_BG.get_width()) + 1):
-            background.blit(DIRT_BG, (i * DIRT_BG.get_width(), j * DIRT_BG.get_width()))
-
+def setup_game():
+    global sounds_on, auto_aim_on, start_on_left, single_player, multi_player, game_on, player, enemy
     # PLAYER SETUP #
     pregame = True
-    game_on = True
     show_controls = False
     show_start = False
     hide_button = pygame.Rect((0, 0, 0, 0))
@@ -938,6 +1065,20 @@ def main():
     obstructions.empty()
     del player, enemy
 
+
+def main():
+    global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
+    global single_player, multi_player, send_error_flag, recv_error_flag, start_on_left
+    global send_thread, recv_thread
+
+    # GENERATE BACKGROUND #
+    for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
+        for j in range(math.ceil(SCREEN_HEIGHT // DIRT_BG.get_width()) + 1):
+            background.blit(DIRT_BG, (i * DIRT_BG.get_width(), j * DIRT_BG.get_width()))
+
+    # SETUP GAME: SINGLE or MULTI-PLAYER
+    setup_game()
+
     # INITIALIZE GAME #
     player_side = left_side = main_screen.get_rect().left + 375
     enemy_side = right_side = main_screen.get_rect().right - 375
@@ -945,7 +1086,7 @@ def main():
         player_side = right_side
         enemy_side = left_side
     player = Player(player_side, SCREEN_HEIGHT // 2, RED_PROFILE)
-    enemy = Player(enemy_side, SCREEN_HEIGHT // 2, BLUE_PROFILE)
+    enemy = Player(enemy_side, SCREEN_HEIGHT // 2, BLUE_PROFILE, True)
 
     obstructions.add(enemy.tank)
     tanks.add(enemy.get_sprites(), player.get_sprites())
