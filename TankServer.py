@@ -21,8 +21,8 @@ if len(sys.argv) > 1:
     host = sys.argv[1]
     print("Server host:", sys.argv[1])
 else:
-    #host = "192.168.86.38"
-    host = "SAL-1908-KJ"
+    host = "192.168.86.38"
+    #host = "SAL-1908-KJ"
 port = 9998
 
 

@@ -586,8 +586,8 @@ game_timer = 0
 if len(sys.argv) > 1:
     SERVER_IP = sys.argv[1]
 else:
-    # SERVER_IP = "192.168.86.38"
-    SERVER_IP = "SAL-1908-KJ"
+    SERVER_IP = "192.168.86.38"
+    # SERVER_IP = "SAL-1908-KJ"
 PORT = 9998
 SEND_SERVER = None
 RECV_SERVER = None
