@@ -1,7 +1,5 @@
 #!/usr/bin/python3
-import pickle
 import socket
-import select
 import sys
 import threading
 import time
