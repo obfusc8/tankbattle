@@ -182,8 +182,6 @@ class Tank(pygame.sprite.Sprite):
         for i in range(-1, (TANK_LENGTH // 5 + 1)):
             pygame.draw.rect(self.image, self.color_dark, (i * 5, 0, 5, 8), 1)
             pygame.draw.rect(self.image, self.color_dark, (i * 5, TANK_WIDTH - 8, 5, 8), 1)
-        #pygame.draw.rect(self.image, self.color_dark+(0,), (TANK_LENGTH-5, 0, 5, 8))
-        #pygame.draw.rect(self.image, self.color_dark+(0,), (TANK_LENGTH-5, TANK_WIDTH - 8, 5, 8))
         self.orig_image = self.image
         self.rect = self.image.get_rect(center=(int(self.pos.x), int(self.pos.y)))
         self.mask = pygame.mask.from_surface(self.image)
@@ -219,8 +217,6 @@ class Tank(pygame.sprite.Sprite):
         for i in range(-1, (TANK_LENGTH // 5) + 1):
             pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), 0, 5, 8), 1)
             pygame.draw.rect(self.orig_image, self.color_dark, (int((i * 5) + self.track), TANK_WIDTH - 8, 5, 8), 1)
-        #pygame.draw.rect(self.orig_image, self.color_dark + (0,), (TANK_LENGTH - 5, 0, 5, 8))
-        #pygame.draw.rect(self.orig_image, self.color_dark+(0,), (TANK_LENGTH-5, TANK_WIDTH - 8, 5, 8))
 
     def turn(self, a):
         self.direction = (self.direction + a) % 360
@@ -310,6 +306,8 @@ class Shot(pygame.sprite.Sprite):
             speed = BIG_SHOT_SPEED
         elif size == SMALL_SHOT_SIZE:
             speed = SMALL_SHOT_SPEED
+        else:
+            speed = 0
         aim = -math.radians(p.tank.cannon.angle)
         self.rect.centerx = int(p.tank.cannon.pos.x + math.cos(aim) * 30)
         self.rect.centery = int(p.tank.cannon.pos.y + math.sin(aim) * 30)
@@ -811,13 +809,13 @@ def draw_info_banner():
     pygame.draw.rect(main_screen, player.color["medium"], (20, temp.bottom + 10, player.health // h, 20))
     bar = pygame.draw.rect(main_screen, player.color["light"], (20, temp.bottom + 10, MAX_HEALTH // h, 20), 1)
     for i in range(BIG_SHOT_MAX):
-        shots = pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 10, bar.bottom + 10, 5, 10))
+        shots_rect = pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 10, bar.bottom + 10, 5, 10))
         if i <= player.big_shots:
             pygame.draw.rect(main_screen, player.color["light"], (20 + i * 10, bar.bottom + 10, 5, 10))
     for i in range(SMALL_SHOT_MAX):
-        pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 2, shots.bottom + 10, 1, 10), 1)
+        pygame.draw.rect(main_screen, player.color["dark"], (20 + i * 2, shots_rect.bottom + 10, 1, 10), 1)
         if i <= player.small_shots:
-            pygame.draw.rect(main_screen, player.color["light"], (20 + i * 2, shots.bottom + 10, 1, 10))
+            pygame.draw.rect(main_screen, player.color["light"], (20 + i * 2, shots_rect.bottom + 10, 1, 10))
     # ENEMY INFO #
     temp = draw_text("ENEMY", main_screen, TEXT_FONT_SMALL, SCREEN_WIDTH - 20, 20, COLOR_WHITE, COLOR_BLACK, "right")
     pygame.draw.rect(main_screen, enemy.color["dark"],
@@ -827,17 +825,17 @@ def draw_info_banner():
     bar = pygame.draw.rect(main_screen, enemy.color["light"],
                            (SCREEN_WIDTH - 20 - MAX_HEALTH // h, temp.bottom + 10, MAX_HEALTH // h, 20), 1)
     for i in range(BIG_SHOT_MAX):
-        shots = pygame.draw.rect(main_screen, enemy.color["dark"],
+        shots_rect = pygame.draw.rect(main_screen, enemy.color["dark"],
                                  (SCREEN_WIDTH - 20 + i * 10 - BIG_SHOT_MAX * 10 + 5, bar.bottom + 10, 5, 10))
         if BIG_SHOT_MAX - i <= enemy.big_shots:
             pygame.draw.rect(main_screen, enemy.color["light"],
                              (SCREEN_WIDTH - 20 + i * 10 - BIG_SHOT_MAX * 10 + 5, bar.bottom + 10, 5, 10))
     for i in range(SMALL_SHOT_MAX):
         pygame.draw.rect(main_screen, enemy.color["dark"],
-                         (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10), 1)
+                         (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots_rect.bottom + 10, 1, 10), 1)
         if SMALL_SHOT_MAX - i <= enemy.small_shots:
             pygame.draw.rect(main_screen, enemy.color["light"],
-                             (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots.bottom + 10, 1, 10))
+                             (SCREEN_WIDTH - 20 + i * 2 - SMALL_SHOT_MAX * 2 + 1, shots_rect.bottom + 10, 1, 10))
 
 
 def load_map(element_map):
@@ -847,7 +845,6 @@ def load_map(element_map):
         for j in range(width):
             n = i * width + j
             if element_map[n] != ".":
-                k = element_map[n]
                 element = Element(element_key[element_map[n]], (j * 50 + 25, i * 50 + 25))
                 map_elements.add(element)
                 if element_map[n] == "R":
@@ -904,7 +901,7 @@ def enemy_bot():
                 if wall.rect.collidepoint(int(a[0]), int(a[1])):
                     adjacents.remove(a)
                     break
-            closest = adjacents[0]
+        closest = adjacents[0]
         for a in adjacents:
             if a.distance_to(player.tank.pos) < closest.distance_to(player.tank.pos):
                 closest = a
