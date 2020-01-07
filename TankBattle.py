@@ -3,6 +3,7 @@ import random
 import socket
 import sys
 import threading
+import time
 from tkinter import Tk, messagebox
 import pygame
 import math
@@ -423,9 +424,8 @@ else:
     # SERVER_IP = "192.168.86.38"
     SERVER_IP = "SAL-1908-KJ"
 PORT = 9998
-SEND_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-RECV_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-TEMP_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+SEND_SERVER = None
+RECV_SERVER = None
 EVENT_CLOSE_SEND_SOCKET = pygame.USEREVENT + 0
 EVENT_CLOSE_RECV_SOCKET = pygame.USEREVENT + 1
 
@@ -467,7 +467,8 @@ sounds_on = False
 auto_aim_on = False
 final_sounds_played = False
 multi_player = False
-single_player = True
+single_player = False
+start_on_left = False
 
 # SPRITE CONTAINER INITIALIZATION #
 tanks = pygame.sprite.RenderPlain((enemy.get_sprites(), player.get_sprites()))
@@ -480,61 +481,81 @@ ether = pygame.sprite.RenderPlain(())
 pixels = pygame.sprite.RenderPlain(())
 
 
-def server_lobby():
-    # server
+def make_server_connections():
+    global SEND_SERVER, RECV_SERVER, recv_error_flag, start_on_left
 
-
-def send_server_thread():
-    global send_error_flag
     send_server_connected = False
+    recv_server_connected = False
 
     try:
-        print(" Connecting to the TankBattle server... ")
-        SEND_SERVER.connect((SERVER_IP, PORT))
-        greeting = SEND_SERVER.recv(1024).decode('ascii')
-        print(" " + greeting)
 
-        print(" " + "Waiting for the other player to join...")
-        greeting = SEND_SERVER.recv(1024).decode('ascii')
-        print(" " + greeting)
+        while not (send_server_connected and recv_server_connected):
 
-        send_server_connected = True
+            TEMP_SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            print(" Connecting to the TankBattle server... ")
+            TEMP_SERVER.connect((SERVER_IP, PORT))
+            greeting = TEMP_SERVER.recv(1024).decode('ascii')
+            print(" " + greeting)
+
+            print(" " + "Waiting for the other player to join...")
+            greeting = TEMP_SERVER.recv(1024).decode('ascii')
+            print(" " + greeting)
+
+            if greeting.find("1") != -1:  # first to connect
+                SEND_SERVER = TEMP_SERVER
+                send_thread = threading.Thread(target=send_server_thread, daemon=True)
+                send_thread.start()
+                send_server_connected = True
+                if send_server_connected and not recv_server_connected:
+                    start_on_left = True
+                    time.sleep(2)  # give server time to make other send connection
+            else:
+                RECV_SERVER = TEMP_SERVER
+                recv_thread = threading.Thread(target=recv_server_thread, daemon=True)
+                recv_thread.start()
+                recv_server_connected = True
 
     except OSError:
         info = "OSError: [WinError 10038] Try restarting the game..."
         print(info)
-        send_error_flag = True
+        recv_error_flag = True
     except ConnectionResetError:
         info = "[Connection Reset Error] Try restarting the game..."
         print(info)
-        send_error_flag = True
+        recv_error_flag = True
     except ConnectionAbortedError:
         info = "[Connection Aborted Error] Try restarting the game..."
         print(info)
-        send_error_flag = True
+        recv_error_flag = True
     except ConnectionRefusedError:
         info = "[Connection Refused Error] Try restarting the game..."
         print(info)
         print(" If this continues to occur, restart the Battleship server")
-        send_error_flag = True
+        recv_error_flag = True
     except KeyboardInterrupt:
         info = "[Keyboard Interrupt] Restart the game..."
         print(info)
-        send_error_flag = True
+        recv_error_flag = True
 
-    print("Starting the send server...")
+
+def send_server_thread():
+    global send_error_flag
+
+    send_server_connected = True
+    #print("Starting the send server...")
     while send_server_connected:
 
         try:
             if len(player_queue) > 0:
 
                 # SEND DATA
-                print("sending", str(player_queue[-1]))
+                #print("sending", str(player_queue[-1]))
                 data = pickle.dumps(player_queue.pop(-1), -1)
                 SEND_SERVER.send(data)
 
                 # WAIT FOR ACKNOWLEDGEMENT
-                print("waiting for ACK")
+                #print("waiting for ACK")
                 ack = SEND_SERVER.recv(64).decode('ascii')
                 if not ack:
                     info = "SORRY! Server connection lost..."
@@ -543,7 +564,7 @@ def send_server_thread():
                     break
                 if ack != "ACK":
                     print(ack)
-                print("ACK received")
+                #print("ACK received")
 
         except OSError:
             break
@@ -561,51 +582,17 @@ def send_server_thread():
 
 def recv_server_thread():
     global recv_error_flag
-    recv_server_connected = False
 
-    try:
-        print(" Connecting to the TankBattle server... ")
-        RECV_SERVER.connect((SERVER_IP, PORT))
-        greeting = RECV_SERVER.recv(1024).decode('ascii')
-        print(" " + greeting)
-
-        print(" " + "Waiting for the other player to join...")
-        greeting = RECV_SERVER.recv(1024).decode('ascii')
-        print(" " + greeting)
-
-        recv_server_connected = True
-
-    except OSError:
-        info = "OSError: [WinError 10038] Try restarting the game..."
-        print(info)
-        recv_error_flag = True
-    except ConnectionResetError:
-        info = "[Connection Reset Error] Try restarting the game..."
-        print(info)
-        recv_error_flag = True
-    except ConnectionAbortedError:
-        info = "[Connection Aborted Error] Try restarting the game..."
-        print(info)
-        recv_error_flag = True
-    except ConnectionRefusedError:
-        info = "[Connection Refused Error] Try restarting the game..."
-        print(info)
-        print(" If this continues to occur, restart the Battleship server")
-        recv_error_flag = True
-    except KeyboardInterrupt:
-        info = "[Keyboard Interrupt] Restart the game..."
-        print(info)
-        recv_error_flag = True
-
-    print("Starting the receive server")
+    recv_server_connected = True
+    print("Starting the receive server...")
     while recv_server_connected:
 
         try:
 
             # RECEIVE DATA
-            print("waiting for data")
+            #print("waiting for data")
             pickled_data = RECV_SERVER.recv(1024)
-            print("received data")
+            #print("received data")
 
             if not pickled_data:
                 info = "SORRY! Server connection lost..."
@@ -616,7 +603,7 @@ def recv_server_thread():
             try:
                 data = pickle.loads(pickled_data)
                 # SEND ACKNOWLEDGEMENT
-                print("sending ack")
+                #print("sending ack")
                 RECV_SERVER.send("ACK".encode('ascii'))
                 enemy_queue.insert(0, data)
                 if len(enemy_queue) > 5:
@@ -783,7 +770,7 @@ def enemy_bot():
 
 def main():
     global main_screen, player, enemy, game_timer, sounds_on, auto_aim_on, enemy_laser_sight
-    global single_player, multi_player
+    global single_player, multi_player, send_error_flag, recv_error_flag, start_on_left
 
     # GENERATE BACKGROUND #
     for i in range(math.ceil(SCREEN_WIDTH // DIRT_BG.get_width()) + 1):
@@ -794,8 +781,16 @@ def main():
     pregame = True
     game_on = True
     show_controls = False
+    show_start = False
+    hide_button = pygame.Rect((0, 0, 0, 0))
+    count_down = 239
+    server_started = False
     while pregame:
         clock.tick(FRAME_RATE)
+
+        if multi_player and not server_started:
+            make_server_connections()
+            server_started = True
 
         for event in pygame.event.get():
 
@@ -808,18 +803,6 @@ def main():
                 pregame = False
                 break
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_9:
-                send_thread = threading.Thread(target=send_server_thread, daemon=True)
-                send_thread.start()
-                multi_player = True
-                single_player = False
-
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_0:
-                recv_thread = threading.Thread(target=recv_server_thread, daemon=True)
-                recv_thread.start()
-                multi_player = True
-                single_player = False
-
             if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
                 sounds_on = not sounds_on
 
@@ -829,8 +812,18 @@ def main():
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # left-click
                     x, y = pygame.mouse.get_pos()
-                    if box.collidepoint(x, y):
+                    if single_button.collidepoint(x, y):
+                        if not (single_player or multi_player):
+                            single_player = True
+                            start_on_left = True
+                    elif multi_button.collidepoint(x, y):
+                        if not (single_player or multi_player):
+                            multi_player = True
+                    elif controls_box.collidepoint(x, y):
                         show_controls = not show_controls
+                    elif start_box.collidepoint(x, y):
+                        if not (single_player or multi_player):
+                            show_start = not show_start
                     else:
                         player.shoot(BIG_SHOT_SIZE)
                 if event.button == 2:  # right-click
@@ -858,28 +851,70 @@ def main():
         main_screen.blit(background, (0, 0))
 
         temp = draw_text("TANK BATTLE", main_screen, TITLE_FONT, SCREEN_WIDTH // 2, SCREEN_HEIGHT//6, COLOR_WHITE, COLOR_BLACK, "center")
+        if single_player:
+            temp = draw_text("Single player game starting...", main_screen, TEXT_FONT_BIG, SCREEN_WIDTH // 2, temp.bottom+25, COLOR_WHITE, COLOR_BLACK, "center")
+            temp = draw_text(str(max(0, count_down//60)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
+            count_down -= 1
+        if multi_player:
+            temp = draw_text("Multi-player game starting...", main_screen, TEXT_FONT_BIG, SCREEN_WIDTH // 2, temp.bottom+25, COLOR_WHITE, COLOR_BLACK, "center")
+            if server_started:
+                temp = draw_text(str(max(0, count_down//60)), main_screen, TITLE_FONT, SCREEN_WIDTH // 2, temp.bottom, COLOR_WHITE, COLOR_BLACK, "center")
+                count_down -= 1
+
+        if count_down // 60 == 0:
+            pregame = False
 
         if not show_controls:
             image = pygame.Surface((240, 50))
             image.fill((0, 0, 0))
             image.set_alpha(80)
-            box = main_screen.blit(image, (25, SCREEN_HEIGHT-image.get_height()-25))
-            temp = draw_text("CONTROLS", main_screen, TEXT_FONT_MED, box.centerx, box.top+10, (150, 150, 150), COLOR_BLACK, "center")
+            controls_box = main_screen.blit(image, (25, SCREEN_HEIGHT-image.get_height()-25))
+            temp = draw_text("CONTROLS", main_screen, TEXT_FONT_MED, controls_box.centerx, controls_box.top+10, (150, 150, 150), COLOR_BLACK, "center")
         else:
             image = pygame.Surface((240, 300))
             image.fill((0, 0, 0))
             image.set_alpha(80)
-            box = main_screen.blit(image, (25, SCREEN_HEIGHT-image.get_height()-25))
-            temp = draw_text("CONTROLS", main_screen, TEXT_FONT_MED, box.centerx, box.top+10, (150, 150, 150), COLOR_BLACK, "center")
-            temp = draw_text("___________________", main_screen, TEXT_FONT_MED, box.centerx, temp.top+10, (125, 125, 125), COLOR_BLACK, "center")
-            temp = draw_text("FORWARD", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom+15, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("W", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("   LEFT    A        D    RIGHT", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("S", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("STOP", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("AIM - Mouse", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 25, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("FIRE - Left Click", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
-            temp = draw_text("RAPID FIRE - Right Click", main_screen, TEXT_FONT_SMALL, box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            controls_box = main_screen.blit(image, (25, SCREEN_HEIGHT-image.get_height()-25))
+            temp = draw_text("CONTROLS", main_screen, TEXT_FONT_MED, controls_box.centerx, controls_box.top+10, (150, 150, 150), COLOR_BLACK, "center")
+            temp = draw_text("___________________", main_screen, TEXT_FONT_MED, controls_box.centerx, temp.top+10, (125, 125, 125), COLOR_BLACK, "center")
+            temp = draw_text("FORWARD", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom+15, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("W", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("   LEFT    A        D    RIGHT", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("S", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("STOP", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("AIM - Mouse", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 25, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("FIRE - Left Click", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("RAPID FIRE - Right Click", main_screen, TEXT_FONT_SMALL, controls_box.centerx, temp.bottom + 5, (220, 220, 220), COLOR_BLACK, "center")
+
+        if not show_start:
+            image = pygame.Surface((240, 50))
+            image.fill((0, 0, 0))
+            image.set_alpha(80)
+            start_box = main_screen.blit(image, (SCREEN_WIDTH-image.get_width()-25, SCREEN_HEIGHT-image.get_height()-25))
+            temp = draw_text("START", main_screen, TEXT_FONT_MED, start_box.centerx, start_box.top+10, (150, 150, 150), COLOR_BLACK, "center")
+            single_button = hide_button
+            multi_button = hide_button
+        else:
+            image = pygame.Surface((240, 240))
+            image.fill((0, 0, 0))
+            image.set_alpha(80)
+            start_box = main_screen.blit(image, (SCREEN_WIDTH-image.get_width()-25, SCREEN_HEIGHT-image.get_height()-25))
+            image = pygame.Surface((200, 50))
+            if single_player:
+                image.fill((100, 50, 50))
+            else:
+                image.fill((50, 50, 50))
+            single_button = main_screen.blit(image, (start_box.centerx-image.get_width()//2, start_box.top+70))
+            image = pygame.Surface((200, 50))
+            if multi_player:
+                image.fill((100, 50, 50))
+            else:
+                image.fill((50, 50, 50))
+            multi_button = main_screen.blit(image, (start_box.centerx-image.get_width()//2, start_box.top+160))
+            temp = draw_text("START", main_screen, TEXT_FONT_MED, start_box.centerx, start_box.top+10, (150, 150, 150), COLOR_BLACK, "center")
+            temp = draw_text("___________________", main_screen, TEXT_FONT_MED, start_box.centerx, temp.top+10, (125, 125, 125), COLOR_BLACK, "center")
+            temp = draw_text("SINGLE PLAYER", main_screen, TEXT_FONT_SMALL, start_box.centerx, temp.bottom+40, (220, 220, 220), COLOR_BLACK, "center")
+            temp = draw_text("MULTI-PLAYER", main_screen, TEXT_FONT_SMALL, start_box.centerx, temp.bottom+65, (220, 220, 220), COLOR_BLACK, "center")
 
         player.update(pygame.mouse.get_pos())
         enemy.update(player.tank.pos)
@@ -891,6 +926,8 @@ def main():
         pixels.draw(main_screen)
 
         pygame.display.update()
+
+    ether.empty()
     shots.empty()
     tanks.empty()
     pixels.empty()
@@ -898,8 +935,13 @@ def main():
     del player, enemy
 
     # INITIALIZE GAME #
-    player = Player(main_screen.get_rect().left + 375, SCREEN_HEIGHT // 2, RED_PROFILE)
-    enemy = Player(main_screen.get_rect().right - 375, SCREEN_HEIGHT // 2, BLUE_PROFILE)
+    player_side = left_side = main_screen.get_rect().left + 375
+    enemy_side = right_side = main_screen.get_rect().right - 375
+    if not start_on_left:
+        player_side = right_side
+        enemy_side = left_side
+    player = Player(player_side, SCREEN_HEIGHT // 2, RED_PROFILE)
+    enemy = Player(enemy_side, SCREEN_HEIGHT // 2, BLUE_PROFILE)
 
     obstructions.add(enemy.tank)
     tanks.add(enemy.get_sprites(), player.get_sprites())
@@ -908,7 +950,6 @@ def main():
 
     done = False
     game_over = False
-    connected = False #######################################################
     while not done and game_on:
         # GAME CLOCK #
         clock.tick(FRAME_RATE)
@@ -925,9 +966,6 @@ def main():
                 done = True
                 break
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_0:
-                connected = True    ###########################################################
-
             if event.type == pygame.KEYDOWN and event.key == pygame.K_1:
                 sounds_on = not sounds_on
 
@@ -943,9 +981,11 @@ def main():
                     pass
 
         # IF SOMETHING GOES WRONG WITH SERVER THREADS
-        if send_error_flag or recv_error_flag and not game_over:
+        if not game_over and (send_error_flag or recv_error_flag):
             Tk().wm_withdraw()  # to hide the main window
             messagebox.showerror('Server Error', 'The enemy has left the game!')
+            send_error_flag = False
+            recv_error_flag = False
 
         # PLAYER MOVEMENT #
         " TANK MOVEMENT "
@@ -978,7 +1018,7 @@ def main():
             enemy.update(player.tank.pos)
             enemy_bot()
         # IF MUTLIPLAYER
-        if multi_player and connected:
+        if multi_player:
             player.send_data()
             for i in range(len(enemy_queue)):
                 enemy.receive_data(enemy_queue.pop(-1))

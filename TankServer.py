@@ -40,26 +40,26 @@ def gameThread(sender, receiver):
 
         try:
             # MESSAGE RECEIVED
-            print("waiting for message from", S)
+            #print("waiting for message from", S)
             message = sender.recv(1024)
             if not message:
                 raise PlayerError("Connection lost from player")
 
             # MESSAGE SENT
-            print("received: message from", S)
-            print("message:", str(message))
-            print("sending message to", R)
+            #print("received: message from", S)
+            #print("message:", str(message))
+            #print("sending message to", R)
             receiver.send(message)
-            print("message sent")
+            #print("message sent")
 
-            print("waiting for ack from receiver")
+            #print("waiting for ack from receiver")
             ack = receiver.recv(1024)
-            print("received: ack from", R)
-            print("ack:", str(ack))
+            #print("received: ack from", R)
+            #print("ack:", str(ack))
 
-            print("sending ack to sender")
+            #print("sending ack to sender")
             sender.send(ack)
-            print("ack sent")
+            #print("ack sent")
 
         except KeyboardInterrupt:
             print("[KeyboardInterrupt] Server was halted")
