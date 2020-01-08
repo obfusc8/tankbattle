@@ -477,14 +477,15 @@ class Player:
             else:
                 self.friction = FRICTION
 
-            shot = pygame.sprite.spritecollide(self.tank, shots, False, pygame.sprite.collide_mask)
-            if shot and shot[0] not in self.shots:
-                for i in range(5):
-                    pixels.add(HitPixel(shot[0].pos, shot[0].size))
-                if not (self.is_enemy and multi_player):
-                    self.take_damage(shot[0].size)
-                shot[0].kill()
-                del shot[0]
+            hits = pygame.sprite.spritecollide(self.tank, shots, False, pygame.sprite.collide_mask)
+            for shot in hits:
+                if shot not in self.shots:
+                    for i in range(5):
+                        pixels.add(HitPixel(shot.pos, shot.size))
+                    if not (self.is_enemy and multi_player):
+                        self.take_damage(shot.size)
+                    shot.kill()
+                    del shot
 
         elif not self.tank.dead:
             self.tank.cannon.kill()
@@ -590,6 +591,8 @@ else:
     SERVER_IP = "192.168.86.38"
     # SERVER_IP = "SAL-1908-KJ"
 PORT = 9998
+print("Server set to " + SERVER_IP + ":" + str(PORT))
+
 SEND_SERVER = None
 RECV_SERVER = None
 EVENT_SERVER_SETUP_ERROR = pygame.USEREVENT + 0
